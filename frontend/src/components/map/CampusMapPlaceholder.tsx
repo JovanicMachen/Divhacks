@@ -156,7 +156,7 @@ export function CampusMapPlaceholder({
   );
 }
 
-/** "You are here" dot, only rendered from a real browser location. */
+/** Blue "you are here" dot. Shown at the campus default until a real location replaces it. */
 function UserLocationDot() {
   return (
     <span aria-label="Your location" role="img" className="absolute grid place-items-center">

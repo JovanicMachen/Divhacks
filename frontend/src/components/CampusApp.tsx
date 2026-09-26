@@ -16,6 +16,7 @@ import { MapEmptyState } from "@/components/map/MapEmptyState";
 import { MapFilters } from "@/components/map/MapFilters";
 import { MapToast } from "@/components/map/MapToast";
 import { PickLocationBanner } from "@/components/map/PickLocationBanner";
+import { DEFAULT_USER_LOCATION } from "@/data/mock-events";
 import { CATEGORY_STYLE } from "@/lib/constants";
 import { geoToMap, isOnMap } from "@/lib/geo";
 import { eventPath, useCampusState } from "@/lib/use-campus-state";
@@ -188,7 +189,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             events={state.visibleEvents}
             selectedEventId={state.drawerOpen ? state.selectedEvent.id : null}
             onSelectEvent={state.selectEvent}
-            userPoint={userOnMap}
+            userPoint={userOnMap ?? DEFAULT_USER_LOCATION}
             onLocate={handleLocateButton}
             locating={geo.status === "requesting"}
             located={Boolean(userOnMap)}

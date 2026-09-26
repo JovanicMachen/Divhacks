@@ -162,6 +162,12 @@ export const MOCK_EVENTS: CampusEvent[] = [
 /** The event selected when the app first opens. */
 export const FEATURED_EVENT_ID = "free-pizza";
 
+/**
+ * Default "you are here" spot on the campus map (Low Steps / College Walk).
+ * A granted browser location replaces this while the user is on the map.
+ */
+export const DEFAULT_USER_LOCATION = { x: 38.7, y: 52.4 } as const;
+
 /** Bottom status bar figures shown over the map. */
 export const CAMPUS_STATS = {
   happeningNow: 12,
