@@ -51,6 +51,14 @@ Paste each file into the Supabase SQL editor and run it once. Every file only ad
    - The window is measured from the times the poster's device sent and applied to the database clock.
    - Existing Rally counts are recounted once, and a read-only check at the end shows stored counts next to participant rows.
 
+10. [`20260927050000_live_chat_compat.sql`](supabase/migrations/20260927050000_live_chat_compat.sql) — **Run this on the live database for chat and Going.** The live `events.status` column and `events_status_check` come from an older system, which makes `20260927010000` and `20260927030000` stop there.
+    - Reads the allowed status values (or enum labels) and records them in `campus_event_status_map`. It never changes the existing constraint or any status value.
+    - Cancelling reuses an existing cancelled-style value if the constraint allows one, and otherwise records only a timestamp. The timestamp goes in an existing `cancelled_at` / `canceled_at` / `abandoned_at` column, or in a new `abandoned_at` if none exists.
+    - Creates `event_messages`, `event_message_deletions`, `events.pinned_message_id` and `event_going`, with their RLS and realtime.
+    - Chat posting is limited to people going, the organizer, or Rally participants. Owners cancel through `cancel_event(id)`.
+    - The summary at the end shows the status mapping it chose.
+    - If you run `27010000`, `27020000` or `27030000` later, run this file again afterwards.
+
 Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
 
 **A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`, then `27020000`, then `27030000`, then `27040000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
