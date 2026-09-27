@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, MailCheck } from "lucide-react";
 import { AuthShell, FieldError, FormError } from "./AuthShell";
 import { safeNextPath } from "./AuthGate";
 import { PasswordField } from "./PasswordField";
+import { useSingleSubmit } from "./useSingleSubmit";
 import { useAccount } from "@/components/account/AccountProvider";
 import { isValidEmail } from "@/lib/auth-validation";
 import { INPUT, LABEL, PRIMARY_BUTTON } from "@/lib/form-styles";
@@ -31,10 +32,11 @@ interface EmailProps {
 function SignInCard({ email, onEmailChange, onForgot }: EmailProps & { onForgot: () => void }) {
   const { signIn } = useAccount();
   const router = useRouter();
+  const { pending, start, finish } = useSingleSubmit();
   const [password, setPassword] = useState("");
   const [showErrors, setShowErrors] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
 
   const errors = {
     email: !email.trim() ? "Enter your email address." : !isValidEmail(email) ? "Please enter a valid email address." : null,
@@ -43,19 +45,26 @@ function SignInCard({ email, onEmailChange, onForgot }: EmailProps & { onForgot:
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!start()) return;
     setError(null);
-    if (errors.email || errors.password) {
-      setShowErrors(true);
-      return;
+    setWait(null);
+    try {
+      if (errors.email || errors.password) {
+        setShowErrors(true);
+        return;
+      }
+      const failure = await signIn(email.trim(), password);
+      if (failure) {
+        setError(failure.message);
+        setWait(
+          failure.retryAfterSeconds ? { seconds: failure.retryAfterSeconds, issuedAt: Date.now() } : null,
+        );
+        return;
+      }
+      router.push(safeNextPath(new URLSearchParams(window.location.search).get("next")));
+    } finally {
+      finish();
     }
-    setBusy(true);
-    const message = await signIn(email.trim(), password);
-    if (message) {
-      setBusy(false);
-      setError(message);
-      return;
-    }
-    router.push(safeNextPath(new URLSearchParams(window.location.search).get("next")));
   };
 
   return (
@@ -119,11 +128,11 @@ function SignInCard({ email, onEmailChange, onForgot }: EmailProps & { onForgot:
           <FieldError id="login-password-error" message={showErrors ? errors.password : null} />
         </div>
 
-        <FormError message={error} />
+        <FormError message={error} wait={wait} />
 
-        <button type="submit" disabled={busy} className={cn(PRIMARY_BUTTON, "w-full")}>
-          {busy && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
-          {busy ? "Signing in…" : "Sign In"}
+        <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
+          {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
+          {pending ? "Signing in…" : "Sign In"}
         </button>
       </form>
     </AuthShell>
@@ -132,22 +141,33 @@ function SignInCard({ email, onEmailChange, onForgot }: EmailProps & { onForgot:
 
 function ForgotCard({ email, onEmailChange, onBack }: EmailProps & { onBack: () => void }) {
   const { requestPasswordReset } = useAccount();
-  const [busy, setBusy] = useState(false);
+  const { pending, start, finish } = useSingleSubmit();
   const [error, setError] = useState<string | null>(null);
+  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
   const [sent, setSent] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!start()) return;
     setError(null);
-    if (!isValidEmail(email)) {
-      setError("Please enter a valid email address.");
-      return;
+    setWait(null);
+    try {
+      if (!isValidEmail(email)) {
+        setError("Please enter a valid email address.");
+        return;
+      }
+      const failure = await requestPasswordReset(email.trim());
+      if (failure) {
+        setError(failure.message);
+        setWait(
+          failure.retryAfterSeconds ? { seconds: failure.retryAfterSeconds, issuedAt: Date.now() } : null,
+        );
+        return;
+      }
+      setSent(true);
+    } finally {
+      finish();
     }
-    setBusy(true);
-    const message = await requestPasswordReset(email.trim());
-    setBusy(false);
-    if (message) setError(message);
-    else setSent(true);
   };
 
   const back = (
@@ -191,9 +211,9 @@ function ForgotCard({ email, onEmailChange, onBack }: EmailProps & { onBack: () 
             className={cn(INPUT, "h-12")}
           />
         </div>
-        <FormError message={error} />
-        <button type="submit" disabled={busy} className={cn(PRIMARY_BUTTON, "w-full")}>
-          {busy && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
+        <FormError message={error} wait={wait} />
+        <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
+          {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
           Send reset link
         </button>
       </form>

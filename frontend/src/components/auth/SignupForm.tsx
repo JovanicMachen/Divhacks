@@ -7,6 +7,7 @@ import { Loader2, MailCheck } from "lucide-react";
 
 import { AuthShell, FieldError, FormError } from "./AuthShell";
 import { PasswordField } from "./PasswordField";
+import { useSingleSubmit } from "./useSingleSubmit";
 import { useAccount } from "@/components/account/AccountProvider";
 import { DISPLAY_NAME_MAX } from "@/lib/account";
 import { PASSWORD_MIN, isValidEmail } from "@/lib/auth-validation";
@@ -22,9 +23,10 @@ export function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const { pending, start, finish } = useSingleSubmit();
   const [showErrors, setShowErrors] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
 
   const errors: Partial<Record<Field, string>> = {};
@@ -38,24 +40,28 @@ export function SignupForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!start()) return;
     setError(null);
-    if (Object.keys(errors).length > 0) {
-      setShowErrors(true);
-      return;
+    setWait(null);
+    try {
+      if (Object.keys(errors).length > 0) {
+        setShowErrors(true);
+        return;
+      }
+      const result = await signUp(email.trim(), password, name.trim());
+      if (result.error) {
+        setError(result.error);
+        setWait(result.retryAfterSeconds ? { seconds: result.retryAfterSeconds, issuedAt: Date.now() } : null);
+        return;
+      }
+      if (result.needsConfirmation) {
+        setConfirmSent(true);
+        return;
+      }
+      router.push("/");
+    } finally {
+      finish();
     }
-    setBusy(true);
-    const result = await signUp(email.trim(), password, name.trim());
-    if (result.error) {
-      setBusy(false);
-      setError(result.error);
-      return;
-    }
-    if (result.needsConfirmation) {
-      setBusy(false);
-      setConfirmSent(true);
-      return;
-    }
-    router.push("/");
   };
 
   if (confirmSent) {
@@ -161,11 +167,11 @@ export function SignupForm() {
           <FieldError id="signup-confirm-error" message={shown("confirm")} />
         </div>
 
-        <FormError message={error} />
+        <FormError message={error} wait={wait} />
 
-        <button type="submit" disabled={busy} className={cn(PRIMARY_BUTTON, "w-full")}>
-          {busy && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
-          {busy ? "Creating account…" : "Create Account"}
+        <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
+          {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
+          {pending ? "Creating account…" : "Create Account"}
         </button>
       </form>
     </AuthShell>

@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Crown, Info } from "lucide-react";
 
 import { useAccount } from "@/components/account/AccountProvider";
+import { rateLimitCopy } from "@/lib/auth-errors";
 
 interface AuthShellProps {
   title: string;
@@ -53,11 +55,40 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
   );
 }
 
-export function FormError({ message }: { message: string | null }) {
+/** Counts down a Supabase retry-after value. `issuedAt` restarts the timer for a new response. */
+function useCountdown(seconds: number | null, issuedAt: number): number | null {
+  const [left, setLeft] = useState<number | null>(seconds);
+  useEffect(() => {
+    if (seconds == null || seconds <= 0) {
+      setLeft(null);
+      return;
+    }
+    const endsAt = Date.now() + seconds * 1000;
+    const tick = () => {
+      const next = Math.ceil((endsAt - Date.now()) / 1000);
+      setLeft(next > 0 ? next : null);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [seconds, issuedAt]);
+  return left;
+}
+
+export function FormError({
+  message,
+  wait,
+}: {
+  message: string | null;
+  /** Set when Supabase included a retry-after on a rate-limit response. */
+  wait?: { seconds: number; issuedAt: number } | null;
+}) {
+  const remaining = useCountdown(wait?.seconds ?? null, wait?.issuedAt ?? 0);
   if (!message) return null;
+  const text = remaining != null ? rateLimitCopy(remaining) : message;
   return (
     <p role="alert" className="rounded-[12px] bg-coral-soft px-3.5 py-2.5 text-[13.5px] font-semibold text-coral-text">
-      {message}
+      {text}
     </p>
   );
 }

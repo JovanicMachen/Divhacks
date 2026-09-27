@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 
 import { AuthShell, FieldError, FormError } from "./AuthShell";
 import { PasswordField } from "./PasswordField";
+import { useSingleSubmit } from "./useSingleSubmit";
 import { useAccount } from "@/components/account/AccountProvider";
 import { PASSWORD_MIN } from "@/lib/auth-validation";
 import { LABEL, PRIMARY_BUTTON } from "@/lib/form-styles";
@@ -18,9 +19,10 @@ export function ResetPasswordForm() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const { pending, start, finish } = useSingleSubmit();
   const [showErrors, setShowErrors] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
 
   if (status === "loading")
     return (
@@ -45,16 +47,26 @@ export function ResetPasswordForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!start()) return;
     setError(null);
-    if (errors.password || errors.confirm) {
-      setShowErrors(true);
-      return;
+    setWait(null);
+    try {
+      if (errors.password || errors.confirm) {
+        setShowErrors(true);
+        return;
+      }
+      const failure = await updatePassword(password);
+      if (failure) {
+        setError(failure.message);
+        setWait(
+          failure.retryAfterSeconds ? { seconds: failure.retryAfterSeconds, issuedAt: Date.now() } : null,
+        );
+        return;
+      }
+      router.push("/");
+    } finally {
+      finish();
     }
-    setBusy(true);
-    const message = await updatePassword(password);
-    setBusy(false);
-    if (message) setError(message);
-    else router.push("/");
   };
 
   return (
@@ -88,9 +100,9 @@ export function ResetPasswordForm() {
           />
           <FieldError id="reset-confirm-error" message={showErrors ? errors.confirm : null} />
         </div>
-        <FormError message={error} />
-        <button type="submit" disabled={busy} className={cn(PRIMARY_BUTTON, "w-full")}>
-          {busy && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
+        <FormError message={error} wait={wait} />
+        <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
+          {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
           Update password
         </button>
       </form>
