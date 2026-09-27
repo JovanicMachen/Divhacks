@@ -46,8 +46,13 @@ Paste each file into the Supabase SQL editor and run it once. Every file only ad
    - Adds a restrictive rule on `event_messages`: a message can only be posted by someone going to the event, its organizer, or someone who joined its Rally.
    - Going reaches the same person's other devices through realtime.
 
+9. [`20260927040000_rally_join_safety.sql`](supabase/migrations/20260927040000_rally_join_safety.sql) — Makes Rally joins safe when two people join at the same moment, and makes Rally windows independent of the phone's clock.
+   - The join trigger now locks the Rally before counting, so simultaneous joins each count and the Rally switches on at the right moment.
+   - The window is measured from the times the poster's device sent and applied to the database clock.
+   - Existing Rally counts are recounted once, and a read-only check at the end shows stored counts next to participant rows.
+
 Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
 
-**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`, then `27020000`, then `27030000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
+**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`, then `27020000`, then `27030000`, then `27040000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
 
 Official campus listings are not stored here. They ship with the frontend and cannot be deleted by a student account.
