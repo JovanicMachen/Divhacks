@@ -1,6 +1,6 @@
 "use client";
 
-import { useImperativeHandle, type Ref } from "react";
+import { memo, useImperativeHandle, useLayoutEffect, useRef, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion, useTransform, type MotionValue } from "framer-motion";
 import { Crown } from "lucide-react";
 
@@ -60,12 +60,11 @@ export function CampusMapPlaceholder({
   onPickPoint,
   draftPin,
 }: CampusMapPlaceholderProps) {
-  const { viewportRef, pointerHandlers, x, y, scale, inverseScale, isDragging, zoomBy, centerOn, reset } =
+  const { viewportRef, pointerHandlers, x, y, scale, inverseScale, zoomBy, centerOn, reset } =
     useMapView(onPickPoint);
   const picking = Boolean(onPickPoint);
   const tier2Opacity = useTierOpacity(scale, TIER_MIN_PX[2]);
   const tier3Opacity = useTierOpacity(scale, TIER_MIN_PX[3]);
-  const tierOpacity = { 1: undefined, 2: tier2Opacity, 3: tier3Opacity };
 
   useImperativeHandle(viewRef, () => ({ centerOn, reset }), [centerOn, reset]);
 
@@ -78,67 +77,13 @@ export function CampusMapPlaceholder({
         role="application"
         aria-label="Campus map. Drag to pan, scroll or use plus and minus to zoom, arrow keys to move."
         className={cn(
-          "absolute inset-0 touch-none select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
-          picking ? "cursor-crosshair" : isDragging ? "cursor-grabbing" : "cursor-grab",
+          "absolute inset-0 touch-none overscroll-none select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
+          picking ? "cursor-crosshair" : "cursor-grab",
         )}
       >
-        <motion.div
-          className="absolute left-0 top-0"
-          style={{ x, y, scale, transformOrigin: "0 0", width: LAYER_SIZE.width, height: LAYER_SIZE.height }}
-        >
-          <CampusMapArt />
-
-          {MAP_LABELS.streets.map((street) => (
-            <MapAnchor key={street.label} x={street.x} y={street.y} inverseScale={inverseScale}>
-              <span
-                className="absolute w-max whitespace-nowrap text-[12.5px] font-medium tracking-[0.01em] text-map-street-label [text-shadow:0_1px_2px_rgba(255,255,255,0.85)]"
-                style={{ transform: `translate(-50%, -50%) rotate(${street.rotate}deg)` }}
-              >
-                {street.label}
-              </span>
-            </MapAnchor>
-          ))}
-
-          {MAP_LABELS.parks.map((park) => (
-            <MapAnchor key={park.label} x={park.x} y={park.y} inverseScale={inverseScale}>
-              <span
-                className="absolute w-max whitespace-nowrap font-serif text-[15px] italic leading-none text-[#5B7F4E] [text-shadow:0_1px_3px_rgba(255,255,255,0.8)]"
-                style={{ transform: `translate(-50%, -50%) rotate(${park.rotate}deg)` }}
-              >
-                {park.label}
-              </span>
-            </MapAnchor>
-          ))}
-
-          {BUILDING_LABELS.map((building) => (
-            <MapAnchor
-              key={building.text}
-              x={building.x}
-              y={building.y}
-              inverseScale={inverseScale}
-              opacity={tierOpacity[building.tier]}
-            >
-              <span
-                className={cn(
-                  "absolute w-max whitespace-pre-line text-center font-serif leading-[1.2] font-normal text-map-label [text-shadow:0_1px_3px_rgba(255,255,255,0.95)]",
-                  building.tier === 3 ? "text-[13px]" : "text-[15px]",
-                )}
-                style={{ transform: "translate(-50%, -50%)" }}
-              >
-                {building.text}
-              </span>
-            </MapAnchor>
-          ))}
-
-          {/* Alma Mater landmark glyph */}
-          <MapAnchor x={ALMA_MATER.mapX} y={ALMA_MATER.mapY} inverseScale={inverseScale} opacity={tierOpacity[2]}>
-            <Crown
-              size={19}
-              strokeWidth={2}
-              aria-hidden
-              className="absolute -translate-x-1/2 -translate-y-1/2 text-[#3F6FB5]"
-            />
-          </MapAnchor>
+        <MapStage x={x} y={y} scale={scale}>
+          <StableMapArt />
+          <MapLabels inverseScale={inverseScale} tier2Opacity={tier2Opacity} tier3Opacity={tier3Opacity} />
 
           {userPoint && (
             <MapAnchor x={userPoint.x} y={userPoint.y} inverseScale={inverseScale}>
@@ -146,23 +91,13 @@ export function CampusMapPlaceholder({
             </MapAnchor>
           )}
 
-          {/* Markers fade out when an event ends or is filtered away. */}
-          <AnimatePresence initial={false}>
-            {events.map((event) => {
-              const point = eventPoint(event);
-              return point ? (
-                <EventMarker
-                  key={event.id}
-                  event={event}
-                  point={point}
-                  selected={event.id === selectedEventId}
-                  onSelect={onSelectEvent}
-                  inverseScale={inverseScale}
-                  interactive={!picking}
-                />
-              ) : null;
-            })}
-          </AnimatePresence>
+          <EventMarkers
+            events={events}
+            selectedEventId={selectedEventId}
+            onSelectEvent={onSelectEvent}
+            inverseScale={inverseScale}
+            interactive={!picking}
+          />
 
           {draftPin && (
             <MapAnchor x={draftPin.x} y={draftPin.y} inverseScale={inverseScale} className="z-[3]">
@@ -173,13 +108,13 @@ export function CampusMapPlaceholder({
                 className="absolute"
                 style={{ translateX: "-50%", translateY: "-100%" }}
               >
-                <div className="relative drop-shadow-[0_3px_5px_rgba(15,37,71,0.22)]" style={{ width: 39, height: 50 }}>
+                <div className="cc-pin-shadow relative" style={{ width: 39, height: 50 }}>
                   <MarkerPin markerColor={draftPin.markerColor} iconType={draftPin.iconType} selected />
                 </div>
               </motion.div>
             </MapAnchor>
           )}
-        </motion.div>
+        </MapStage>
       </div>
 
       <MapControls
@@ -192,6 +127,156 @@ export function CampusMapPlaceholder({
     </div>
   );
 }
+
+const StableMapArt = memo(CampusMapArt);
+
+/**
+ * The illustrated layer. Pan and zoom write one translate3d/scale here, so
+ * markers ride along instead of each computing a screen position.
+ */
+function MapStage({
+  x,
+  y,
+  scale,
+  children,
+}: {
+  x: MotionValue<number>;
+  y: MotionValue<number>;
+  scale: MotionValue<number>;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let queued = false;
+    const paint = () => {
+      queued = false;
+      el.style.transform = `translate3d(${x.get()}px, ${y.get()}px, 0) scale(${scale.get()})`;
+    };
+    const schedule = () => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(paint);
+    };
+    paint();
+    const unsubs = [x.on("change", schedule), y.on("change", schedule), scale.on("change", schedule)];
+    return () => unsubs.forEach((unsub) => unsub());
+  }, [x, y, scale]);
+  return (
+    <div
+      ref={ref}
+      className="absolute left-0 top-0"
+      style={{
+        transformOrigin: "0 0",
+        width: LAYER_SIZE.width,
+        height: LAYER_SIZE.height,
+        willChange: "transform",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const MapLabels = memo(function MapLabels({
+  inverseScale,
+  tier2Opacity,
+  tier3Opacity,
+}: {
+  inverseScale: MotionValue<number>;
+  tier2Opacity: MotionValue<number>;
+  tier3Opacity: MotionValue<number>;
+}) {
+  const tierOpacity = { 1: undefined, 2: tier2Opacity, 3: tier3Opacity } as const;
+  return (
+    <>
+      {MAP_LABELS.streets.map((street) => (
+        <MapAnchor key={street.label} x={street.x} y={street.y} inverseScale={inverseScale}>
+          <span
+            className="absolute w-max whitespace-nowrap text-[12.5px] font-medium tracking-[0.01em] text-map-street-label [text-shadow:0_1px_2px_rgba(255,255,255,0.85)]"
+            style={{ transform: `translate(-50%, -50%) rotate(${street.rotate}deg)` }}
+          >
+            {street.label}
+          </span>
+        </MapAnchor>
+      ))}
+
+      {MAP_LABELS.parks.map((park) => (
+        <MapAnchor key={park.label} x={park.x} y={park.y} inverseScale={inverseScale}>
+          <span
+            className="absolute w-max whitespace-nowrap font-serif text-[15px] italic leading-none text-[#5B7F4E] [text-shadow:0_1px_3px_rgba(255,255,255,0.8)]"
+            style={{ transform: `translate(-50%, -50%) rotate(${park.rotate}deg)` }}
+          >
+            {park.label}
+          </span>
+        </MapAnchor>
+      ))}
+
+      {BUILDING_LABELS.map((building) => (
+        <MapAnchor
+          key={building.text}
+          x={building.x}
+          y={building.y}
+          inverseScale={inverseScale}
+          opacity={tierOpacity[building.tier]}
+        >
+          <span
+            className={cn(
+              "absolute w-max whitespace-pre-line text-center font-serif leading-[1.2] font-normal text-map-label [text-shadow:0_1px_3px_rgba(255,255,255,0.95)]",
+              building.tier === 3 ? "text-[13px]" : "text-[15px]",
+            )}
+            style={{ transform: "translate(-50%, -50%)" }}
+          >
+            {building.text}
+          </span>
+        </MapAnchor>
+      ))}
+
+      <MapAnchor x={ALMA_MATER.mapX} y={ALMA_MATER.mapY} inverseScale={inverseScale} opacity={tier2Opacity}>
+        <Crown
+          size={19}
+          strokeWidth={2}
+          aria-hidden
+          className="absolute -translate-x-1/2 -translate-y-1/2 text-[#3F6FB5]"
+        />
+      </MapAnchor>
+    </>
+  );
+});
+
+const EventMarkers = memo(function EventMarkers({
+  events,
+  selectedEventId,
+  onSelectEvent,
+  inverseScale,
+  interactive,
+}: {
+  events: CampusEvent[];
+  selectedEventId: string | null;
+  onSelectEvent: (eventId: string) => void;
+  inverseScale: MotionValue<number>;
+  interactive: boolean;
+}) {
+  return (
+    <AnimatePresence initial={false}>
+      {events.map((event) => {
+        const point = eventPoint(event);
+        return point ? (
+          <EventMarker
+            key={event.id}
+            event={event}
+            point={point}
+            selected={event.id === selectedEventId}
+            onSelect={onSelectEvent}
+            inverseScale={inverseScale}
+            interactive={interactive}
+          />
+        ) : null;
+      })}
+    </AnimatePresence>
+  );
+});
 
 /** Opacity that switches a label tier on once the map is zoomed in far enough. */
 function useTierOpacity(scale: MotionValue<number>, minPxPerUnit: number) {

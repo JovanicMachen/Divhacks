@@ -7,7 +7,7 @@ import {
   type AnimationPlaybackControls,
   type MotionValue,
 } from "framer-motion";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { WORLD, worldToMap, type MapPoint } from "@/lib/geo";
 
@@ -34,7 +34,6 @@ export interface MapView {
   scale: MotionValue<number>;
   /** 1 / scale — keeps pins and labels a constant size while zooming. */
   inverseScale: MotionValue<number>;
-  isDragging: boolean;
   zoomBy: (factor: number) => void;
   /** `zoom` is relative to the opening view; defaults to at least that close. */
   centerOn: (point: MapPoint, zoom?: number) => void;
@@ -58,7 +57,9 @@ const minScaleFor = (w: number, h: number) => Math.min(w / LAYER_SIZE.width, h /
 const homeScaleFor = (w: number, h: number) =>
   clamp(Math.max(w, h) / (HOME_SPAN * PX_PER_UNIT), minScaleFor(w, h), MAX_SCALE);
 
-function measure(el: HTMLElement | null) {
+type ViewportBox = { w: number; h: number; left: number; top: number };
+
+function readBox(el: HTMLElement | null): ViewportBox {
   const rect = el?.getBoundingClientRect();
   return { w: rect?.width || 1, h: rect?.height || 1, left: rect?.left ?? 0, top: rect?.top ?? 0 };
 }
@@ -82,25 +83,33 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
   const y = useMotionValue(0);
   const scale = useMotionValue(1);
   const inverseScale = useTransform(scale, (s) => 1 / s);
-  const [isDragging, setIsDragging] = useState(false);
 
   const running = useRef<AnimationPlaybackControls[]>([]);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef({ moved: false, startX: 0, startY: 0, pinchDist: 0 });
   const lastSize = useRef<{ w: number; h: number } | null>(null);
+  /** Cached viewport box. Pointer moves read this instead of forcing layout. */
+  const boxRef = useRef<ViewportBox>({ w: 1, h: 1, left: 0, top: 0 });
   const onTapRef = useRef(onTap);
+  const rafRef = useRef(0);
+  const pendingRef = useRef<{ type: "pan"; dx: number; dy: number } | { type: "zoom"; factor: number; px: number; py: number } | null>(null);
   useEffect(() => {
     onTapRef.current = onTap;
   }, [onTap]);
 
+  const refreshBox = useCallback(() => {
+    boxRef.current = readBox(viewportRef.current);
+    return boxRef.current;
+  }, []);
+
   const clampScale = useCallback((s: number) => {
-    const { w, h } = measure(viewportRef.current);
+    const { w, h } = boxRef.current;
     return clamp(s, minScaleFor(w, h), MAX_SCALE);
   }, []);
 
   /** Centres the layer on an axis where it is smaller than the viewport. */
   const clampTranslate = useCallback((tx: number, ty: number, s: number) => {
-    const { w, h } = measure(viewportRef.current);
+    const { w, h } = boxRef.current;
     const lw = LAYER_SIZE.width * s;
     const lh = LAYER_SIZE.height * s;
     return {
@@ -108,6 +117,19 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
       y: lh <= h ? (h - lh) / 2 : clamp(ty, h - lh - PAN_SLACK, PAN_SLACK),
     };
   }, []);
+
+  /** Cursor and a gesture flag, without a React render. CSS pauses decoration while it is set. */
+  const markGesture = (active: boolean) => {
+    const el = viewportRef.current;
+    if (!el) return;
+    if (active) {
+      el.dataset.mapGesture = "";
+      el.style.cursor = "grabbing";
+    } else {
+      delete el.dataset.mapGesture;
+      el.style.cursor = "";
+    }
+  };
 
   const stop = () => {
     running.current.forEach((c) => c.stop());
@@ -140,16 +162,16 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
   );
 
   const homeView = useCallback(() => {
-    const { w, h } = measure(viewportRef.current);
-    const s = homeScaleFor(w, h);
-    return { ...centeredOn(measure(viewportRef.current), HOME_CENTER, s), s };
-  }, []);
+    const view = refreshBox();
+    const s = homeScaleFor(view.w, view.h);
+    return { ...centeredOn(view, HOME_CENTER, s), s };
+  }, [refreshBox]);
 
   // Place the opening view before the first paint.
   useLayoutEffect(() => {
     const { tx, ty, s } = homeView();
     jumpTo(tx, ty, s);
-    const { w, h } = measure(viewportRef.current);
+    const { w, h } = boxRef.current;
     lastSize.current = { w, h };
   }, [homeView, jumpTo]);
 
@@ -159,7 +181,7 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     const el = viewportRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      const { w, h } = measure(viewportRef.current);
+      const { w, h } = refreshBox();
       const prev = lastSize.current;
       lastSize.current = { w, h };
       if (!prev || (prev.w === w && prev.h === h)) return;
@@ -171,7 +193,7 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [clampScale, jumpTo, scale, x, y]);
+  }, [clampScale, jumpTo, refreshBox, scale, x, y]);
 
   /** Zooms keeping the screen point (px, py) — relative to the viewport — fixed. */
   const zoomAround = useCallback(
@@ -189,20 +211,21 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
 
   const zoomBy = useCallback(
     (factor: number) => {
-      const { w, h } = measure(viewportRef.current);
+      const { w, h } = refreshBox();
       zoomAround(factor, w / 2, h / 2, true);
     },
-    [zoomAround],
+    [refreshBox, zoomAround],
   );
 
   const centerOn = useCallback(
     (point: MapPoint, zoom?: number) => {
       const home = homeView().s;
       const s = clampScale(zoom !== undefined ? home * zoom : Math.max(scale.get(), home));
-      const { tx, ty } = centeredOn(measure(viewportRef.current), point, s);
+      refreshBox();
+      const { tx, ty } = centeredOn(boxRef.current, point, s);
       animateTo(tx, ty, s, FOCUS_DURATION);
     },
-    [animateTo, clampScale, homeView, scale],
+    [animateTo, clampScale, homeView, refreshBox, scale],
   );
 
   const reset = useCallback(() => {
@@ -216,7 +239,7 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const { left, top } = measure(viewportRef.current);
+      const { left, top } = boxRef.current;
       const sensitivity = e.ctrlKey ? 0.012 : 0.0022;
       zoomAround(Math.exp(-e.deltaY * sensitivity), e.clientX - left, e.clientY - top, false);
     };
@@ -224,10 +247,40 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAround]);
 
+  const zoomAroundRef = useRef(zoomAround);
+  zoomAroundRef.current = zoomAround;
+  const clampTranslateRef = useRef(clampTranslate);
+  clampTranslateRef.current = clampTranslate;
+
+  const scheduleGesture = () => {
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      const job = pendingRef.current;
+      pendingRef.current = null;
+      if (!job) return;
+      if (job.type === "pan") {
+        const next = clampTranslateRef.current(x.get() + job.dx, y.get() + job.dy, scale.get());
+        x.set(next.x);
+        y.set(next.y);
+        return;
+      }
+      zoomAroundRef.current(job.factor, job.px, job.py, false);
+    });
+  };
+
+  useEffect(
+    () => () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    },
+    [],
+  );
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if ((e.target as HTMLElement).closest("button, a, input, textarea, [data-mobile-sheet]")) return;
     stop();
+    refreshBox();
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.current.size === 1) {
@@ -236,6 +289,7 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
       const [a, b] = [...pointers.current.values()];
       gesture.current.pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
       gesture.current.moved = true;
+      markGesture(true);
     }
   };
 
@@ -248,8 +302,16 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
       const [a, b] = [...pointers.current.values()];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       if (gesture.current.pinchDist > 0) {
-        const { left, top } = measure(viewportRef.current);
-        zoomAround(dist / gesture.current.pinchDist, (a.x + b.x) / 2 - left, (a.y + b.y) / 2 - top, false);
+        const { left, top } = boxRef.current;
+        const step = dist / gesture.current.pinchDist;
+        const pending = pendingRef.current;
+        pendingRef.current = {
+          type: "zoom",
+          factor: (pending?.type === "zoom" ? pending.factor : 1) * step,
+          px: (a.x + b.x) / 2 - left,
+          py: (a.y + b.y) / 2 - top,
+        };
+        scheduleGesture();
       }
       gesture.current.pinchDist = dist;
       return;
@@ -259,20 +321,24 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     if (!g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < TAP_TOLERANCE) return;
     if (!g.moved) {
       g.moved = true;
-      setIsDragging(true);
+      markGesture(true);
     }
-    const next = clampTranslate(x.get() + e.clientX - prev.x, y.get() + e.clientY - prev.y, scale.get());
-    x.set(next.x);
-    y.set(next.y);
+    const pending = pendingRef.current;
+    pendingRef.current = {
+      type: "pan",
+      dx: (pending?.type === "pan" ? pending.dx : 0) + e.clientX - prev.x,
+      dy: (pending?.type === "pan" ? pending.dy : 0) + e.clientY - prev.y,
+    };
+    scheduleGesture();
   };
 
   const endPointer = (e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
     if (!pointers.current.has(e.pointerId)) return;
     pointers.current.delete(e.pointerId);
     if (pointers.current.size > 0) return;
-    setIsDragging(false);
+    markGesture(false);
     if (!cancelled && !gesture.current.moved && onTapRef.current) {
-      const { left, top } = measure(viewportRef.current);
+      const { left, top } = refreshBox();
       const s = scale.get();
       onTapRef.current({
         x: ((e.clientX - left - x.get()) / s / LAYER_SIZE.width) * 100,
@@ -309,7 +375,6 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     y,
     scale,
     inverseScale,
-    isDragging,
     zoomBy,
     centerOn,
     reset,

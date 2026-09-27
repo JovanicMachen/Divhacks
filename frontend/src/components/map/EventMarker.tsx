@@ -1,7 +1,7 @@
 "use client";
 
-import type { ComponentType } from "react";
-import { AnimatePresence, motion, useReducedMotion, type MotionValue } from "framer-motion";
+import { memo, type ComponentType } from "react";
+import { motion, useReducedMotion, type MotionValue } from "framer-motion";
 import { BookOpen, BriefcaseBusiness, Building2, GraduationCap, Music, Users } from "lucide-react";
 
 import { countdownTone } from "@/components/events/CountdownChip";
@@ -125,7 +125,16 @@ export function PhotoBubble({
       >
         {/* Event photos come from Supabase Storage or a local data URL. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageUrl} alt="" draggable={false} className="h-full w-full object-cover" />
+        <img
+          src={imageUrl}
+          alt=""
+          draggable={false}
+          width={size}
+          height={size}
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+        />
       </span>
       <svg
         viewBox="0 0 14 9"
@@ -178,10 +187,101 @@ function MarkerCountdown({ countdown }: { countdown: EventCountdown }) {
   );
 }
 
-/** Rallies get their own broadcast-style marker; everything else keeps the pin. */
-export function EventMarker(props: EventMarkerProps) {
-  return props.event.rally ? <RallyMarker {...props} /> : <StandardMarker {...props} />;
+function sameMarker(prev: EventMarkerProps, next: EventMarkerProps) {
+  if (
+    prev.selected !== next.selected ||
+    prev.interactive !== next.interactive ||
+    prev.onSelect !== next.onSelect ||
+    prev.inverseScale !== next.inverseScale ||
+    prev.point.x !== next.point.x ||
+    prev.point.y !== next.point.y
+  ) {
+    return false;
+  }
+  const a = prev.event;
+  const b = next.event;
+  const ar = a.rally;
+  const br = b.rally;
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.locationName === b.locationName &&
+    a.markerColor === b.markerColor &&
+    a.iconType === b.iconType &&
+    a.imageUrl === b.imageUrl &&
+    a.organizationEvent === b.organizationEvent &&
+    a.startsAt === b.startsAt &&
+    a.endsAt === b.endsAt &&
+    a.status === b.status &&
+    ar?.status === br?.status &&
+    ar?.participantCount === br?.participantCount &&
+    ar?.minParticipants === br?.minParticipants &&
+    ar?.expiresAt === br?.expiresAt
+  );
 }
+
+const WentLiveBurst = memo(function WentLiveBurst({ width, color }: { width: number; color: string }) {
+  return (
+    <motion.span
+      aria-hidden
+      initial={{ scale: 0.6, opacity: 0.5 }}
+      animate={{ scale: 2.1, opacity: 0 }}
+      transition={{ duration: 1, ease: "easeOut" }}
+      className="pointer-events-none absolute left-1/2 block rounded-full border-2"
+      style={{
+        top: 0,
+        marginLeft: -width / 2,
+        width,
+        height: width,
+        borderColor: color,
+      }}
+    />
+  );
+});
+
+/** Countdown text only. A tick re-renders this span, not the pin or the map. */
+function MarkerCountdownSlot({ event }: { event: CampusEvent }) {
+  const countdown = useEventCountdown(event);
+  if (!countdown || countdown.phase === "ended") return null;
+  return <MarkerCountdown countdown={countdown} />;
+}
+
+/** Live halo, isolated from the pin so the once-a-second label does not rebuild it. */
+function MarkerLiveDecor({
+  event,
+  width,
+  color,
+  reduceMotion,
+}: {
+  event: CampusEvent;
+  width: number;
+  color: string;
+  reduceMotion: boolean;
+}) {
+  const countdown = useEventCountdown(event);
+  if (countdown?.phase !== "live") return null;
+  const strong = countdown.urgency === "final" || countdown.urgency === "seconds";
+  return (
+    <>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ top: width / 2 }}
+      >
+        <span
+          className={cn("block rounded-full", strong ? "cc-breathe-strong" : "cc-breathe")}
+          style={{ width: width + 30, height: width + 30, backgroundColor: color }}
+        />
+      </span>
+      {!reduceMotion && <WentLiveBurst width={width} color={color} />}
+    </>
+  );
+}
+
+/** Rallies get their own broadcast-style marker; everything else keeps the pin. */
+export const EventMarker = memo(function EventMarker(props: EventMarkerProps) {
+  return props.event.rally ? <RallyMarker {...props} /> : <StandardMarker {...props} />;
+}, sameMarker);
 
 /** Small purple mark for organization events, on top of the category colour. */
 function OrgBadge({ left, top }: { left: number; top: number }) {
@@ -201,16 +301,24 @@ function OrgBadge({ left, top }: { left: number; top: number }) {
  * forming, radar pulses, and a RALLY label with the time left. Once enough
  * people join it switches to a solid glowing ring and RALLY ON.
  */
+function RallyClock({ rally, on }: { rally: NonNullable<CampusEvent["rally"]>; on: boolean }) {
+  const remaining = useRallyRemaining(on ? null : rally);
+  return (
+    <span className="mt-[3px] text-[11.5px] font-bold tabular-nums">
+      {on ? `${rally.participantCount} joined` : remaining !== null ? formatRallyClock(remaining) : ""}
+    </span>
+  );
+}
+
 function RallyMarker({ event, point, selected, onSelect, inverseScale, interactive = true }: EventMarkerProps) {
   const rally = event.rally!;
-  const remaining = useRallyRemaining(rally);
   const reduceMotion = useReducedMotion();
   const on = rally.status === "active";
   const size = selected ? 50 : 44;
   const Icon = MARKER_ICONS[event.iconType];
   const status = on
     ? `Rally on, ${rally.participantCount} joined`
-    : `Rally forming, ${rally.participantCount} of ${rally.minParticipants} joined${remaining !== null ? `, ${formatRallyClock(remaining)} left` : ""}`;
+    : `Rally forming, ${rally.participantCount} of ${rally.minParticipants} joined`;
 
   return (
     <MapAnchor x={point.x} y={point.y} inverseScale={inverseScale} className={selected ? "z-[4]" : "z-[3]"}>
@@ -263,7 +371,7 @@ function RallyMarker({ event, point, selected, onSelect, inverseScale, interacti
           whileTap={interactive ? { scale: 0.96 } : undefined}
           transition={on ? { type: "spring", stiffness: 420, damping: 14 } : { duration: 0.16 }}
           className={cn(
-            "relative grid h-full w-full place-items-center rounded-full text-white ring-[3px] ring-white",
+            "cc-rally-core relative grid h-full w-full place-items-center rounded-full text-white ring-[3px] ring-white",
             interactive ? "pointer-events-auto" : "pointer-events-none",
           )}
           style={{
@@ -281,9 +389,7 @@ function RallyMarker({ event, point, selected, onSelect, inverseScale, interacti
             style={{ backgroundColor: on ? RALLY_BLUE : RALLY_NAVY }}
           >
             <span className="text-[9px] font-extrabold tracking-[0.14em]">{on ? "RALLY ON" : "RALLY"}</span>
-            <span className="mt-[3px] text-[11.5px] font-bold tabular-nums">
-              {on ? `${rally.participantCount} joined` : remaining !== null ? formatRallyClock(remaining) : ""}
-            </span>
+            <RallyClock rally={rally} on={on} />
           </span>
         </span>
       </motion.div>
@@ -308,10 +414,7 @@ function StandardMarker({
   // A photo bubble is a circle plus a 10px pointer; its tip sits on the spot like the pin's.
   const width = photo ? (selected ? 56 : 46) : selected ? 39 : 34;
   const height = photo ? width + 10 : selected ? 50 : 44;
-  const countdown = useEventCountdown(event);
-  const live = countdown?.phase === "live";
   const reduceMotion = useReducedMotion();
-  const label = countdown && countdown.phase !== "ended" ? `, ${countdown.label}` : "";
 
   return (
     <MapAnchor x={point.x} y={point.y} inverseScale={inverseScale} className={selected ? "z-[2]" : "z-[1]"}>
@@ -326,41 +429,7 @@ function StandardMarker({
       transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
       className="relative origin-bottom"
     >
-      {live && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2"
-          style={{ top: width / 2 }}
-        >
-          <span
-            className={cn(
-              "block rounded-full",
-              countdown.urgency === "final" || countdown.urgency === "seconds" ? "cc-breathe-strong" : "cc-breathe",
-            )}
-            style={{ width: width + 30, height: width + 30, backgroundColor: palette.solid }}
-          />
-        </span>
-      )}
-      <AnimatePresence initial={false}>
-        {live && !reduceMotion && (
-          <motion.span
-            key="went-live"
-            aria-hidden
-            initial={{ scale: 0.6, opacity: 0.5 }}
-            animate={{ scale: 2.1, opacity: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 1, ease: "easeOut" }}
-            className="pointer-events-none absolute left-1/2 block rounded-full border-2"
-            style={{
-              top: 0,
-              marginLeft: -width / 2,
-              width,
-              height: width,
-              borderColor: palette.solid,
-            }}
-          />
-        )}
-      </AnimatePresence>
+      <MarkerLiveDecor event={event} width={width} color={palette.solid} reduceMotion={Boolean(reduceMotion)} />
       {selected && (
         <span aria-hidden className="pointer-events-none absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2">
           <span
@@ -377,7 +446,7 @@ function StandardMarker({
       <motion.button
         type="button"
         onClick={() => onSelect(event.id)}
-        aria-label={`${event.title} at ${event.locationName}${label}`}
+        aria-label={`${event.title} at ${event.locationName}`}
         aria-pressed={selected}
         tabIndex={interactive ? 0 : -1}
         initial={false}
@@ -385,7 +454,7 @@ function StandardMarker({
         whileTap={interactive ? { scale: 0.97 } : undefined}
         transition={{ duration: 0.16, ease: "easeOut" }}
         className={cn(
-          "relative block origin-bottom drop-shadow-[0_3px_5px_rgba(15,37,71,0.22)]",
+          "cc-pin-shadow relative block origin-bottom",
           interactive ? "pointer-events-auto" : "pointer-events-none",
         )}
         style={{ width, height }}
@@ -397,7 +466,7 @@ function StandardMarker({
         )}
       </motion.button>
       {event.organizationEvent && <OrgBadge left={width - (photo ? 14 : 11)} top={photo ? -2 : -3} />}
-      {countdown && countdown.phase !== "ended" && <MarkerCountdown countdown={countdown} />}
+      <MarkerCountdownSlot event={event} />
     </motion.div>
     </div>
     </MapAnchor>

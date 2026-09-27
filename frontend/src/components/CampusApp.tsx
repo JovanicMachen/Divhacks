@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 
 import { useAccount } from "@/components/account/AccountProvider";
@@ -152,6 +152,12 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
     if (window.matchMedia("(min-width: 900px)").matches) setGeminiOpen(true);
   }, []);
 
+  const mapActions = useRef({
+    selectEvent: state.selectEvent,
+    events: state.events,
+    focus: (_event: CampusEvent) => {},
+  });
+
   /** Moves the map to an event's pin, when it has one. */
   const focusEvent = (event: CampusEvent) => {
     const point = eventPoint(event);
@@ -161,6 +167,13 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
     if (!isSheet && !showDrawer) window.setTimeout(() => mapRef.current?.centerOn(point), 280);
     else mapRef.current?.centerOn(point);
   };
+  mapActions.current = { selectEvent: state.selectEvent, events: state.events, focus: focusEvent };
+  const onMapSelect = useCallback((id: string) => {
+    const actions = mapActions.current;
+    actions.selectEvent(id);
+    const event = actions.events.find((item) => item.id === id);
+    if (event) actions.focus(event);
+  }, []);
 
   // Deep links and picks from the profile page fly to the event once it has loaded.
   const focusedRequest = useRef(false);
@@ -346,11 +359,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             viewRef={mapRef}
             events={state.visibleEvents}
             selectedEventId={state.drawerOpen && selected ? selected.id : null}
-            onSelectEvent={(id) => {
-              state.selectEvent(id);
-              const event = state.events.find((e) => e.id === id);
-              if (event) focusEvent(event);
-            }}
+            onSelectEvent={onMapSelect}
             userPoint={userOnMap}
             onLocate={handleLocateButton}
             locating={geo.status === "requesting"}

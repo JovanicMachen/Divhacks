@@ -219,6 +219,50 @@ html.cc-sheet-gesture body {
   scroll-snap-align: start;
 }
 
+/* One promoted layer. Pause decoration while a finger is panning or pinching it. */
+[data-map-gesture] .cc-breathe,
+[data-map-gesture] .cc-breathe-strong,
+[data-map-gesture] .cc-heartbeat,
+[data-map-gesture] .cc-live-dot,
+[data-map-gesture] .cc-radar,
+[data-map-gesture] .cc-radar-strong,
+[data-map-gesture] .cc-spin-slow {
+  animation-play-state: paused;
+}
+
+.cc-pin-shadow {
+  filter: drop-shadow(0 3px 5px rgba(15, 37, 71, 0.22));
+}
+
+/* Phones: keep the pins, drop the effects that repaint the whole illustrated layer. */
+@media (pointer: coarse) {
+  .cc-pin-shadow {
+    filter: none;
+  }
+
+  .cc-radar-delay {
+    display: none;
+  }
+
+  .cc-spin-slow {
+    animation: none;
+  }
+
+  .cc-rally-core {
+    box-shadow: 0 2px 6px rgb(15 37 71 / 0.28) !important;
+  }
+
+  .cc-breathe,
+  .cc-breathe-strong {
+    animation-duration: 4.8s;
+  }
+
+  .cc-radar,
+  .cc-radar-strong {
+    animation-duration: 3.6s;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cc-breathe,
   .cc-breathe-strong,

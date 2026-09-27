@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -204,11 +205,20 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     () => null,
   );
 
+  const eventCache = useRef(new Map<string, { row: EventRow; event: CampusEvent }>());
   const studentEvents = useMemo(() => {
     const now = new Date();
-    return (rows ?? [])
-      .map((row) => rowToEvent(row, now))
-      .sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
+    const next = new Map<string, { row: EventRow; event: CampusEvent }>();
+    const list = (rows ?? []).map((row) => {
+      const prev = eventCache.current.get(row.id);
+      // A realtime upsert replaces one row. Unchanged rows keep the same event object.
+      const event = prev && prev.row === row ? prev.event : rowToEvent(row, now);
+      next.set(row.id, { row, event });
+      return event;
+    });
+    eventCache.current = next;
+    list.sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
+    return list;
   }, [rows]);
 
   const events = useMemo(() => {
