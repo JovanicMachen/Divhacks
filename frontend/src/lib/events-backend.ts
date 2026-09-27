@@ -205,8 +205,8 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
     async joinRally(id) {
       // user_id defaults to auth.uid(); RLS only accepts your own row on an open Rally.
       const { error } = await supabase.from("rally_participants").insert({ event_id: id });
-      if (error) {
-        if (error.code === "23505") throw new Error("You already joined this Rally.");
+      // 23505: this account already counts (a double tap, or another device) — that's joined.
+      if (error && error.code !== "23505") {
         if (error.code === "42501" || /row-level security/i.test(error.message))
           throw new Error("This Rally isn't taking new people anymore.");
         throw describe(error, "join");
@@ -349,6 +349,42 @@ export function createLocalEventsBackend(): EventsBackend {
     });
   };
 
+  const joinLocal = (id: string, userId: string): EventRow => {
+    const rows = readLocal();
+    const target = rows.find((row) => row.id === id);
+    const now = Date.now();
+    const open =
+      target?.event_type === "rally" &&
+      (target.status ?? "active") === "active" &&
+      ((target.rally_status === "forming" && Date.parse(target.rally_expires_at ?? "") > now) ||
+        (target.rally_status === "active" && Date.parse(target.end_time ?? "") > now));
+    if (!open) throw new Error("This Rally isn't taking new people anymore.");
+    const participants = readParticipants();
+    // Already counted (a double tap or another tab): that's joined, not an error.
+    if (participants.some((p) => p.event_id === id && p.user_id === userId)) return target!;
+    window.localStorage.setItem(
+      LOCAL_RALLY_KEY,
+      JSON.stringify([...participants, { event_id: id, user_id: userId, joined_at: new Date(now).toISOString() }]),
+    );
+    const next = syncRally(rows, id);
+    const row = next.find((r) => r.id === id)!;
+    write(next, { type: "upsert", row });
+    return row;
+  };
+
+  const expireLocal = () => {
+    const now = Date.now();
+    const rows = readLocal();
+    const expired = rows.filter(
+      (row) => row.event_type === "rally" && row.rally_status === "forming" && Date.parse(row.rally_expires_at ?? "") <= now,
+    );
+    if (expired.length === 0) return;
+    const ids = new Set(expired.map((row) => row.id));
+    const next = rows.map((row) => (ids.has(row.id) ? { ...row, rally_status: "expired" as const } : row));
+    window.localStorage.setItem(LOCAL_KEY, JSON.stringify(next));
+    next.filter((row) => ids.has(row.id)).forEach((row) => channel?.postMessage({ type: "upsert", row } satisfies EventChange));
+  };
+
   return {
     async list() {
       return readLocal();
@@ -433,38 +469,15 @@ export function createLocalEventsBackend(): EventsBackend {
     async joinRally(id) {
       const userId = currentUserId();
       if (!userId) throw new Error("You need to be signed in to join a Rally.");
-      const rows = readLocal();
-      const target = rows.find((row) => row.id === id);
-      const now = Date.now();
-      const open =
-        target?.event_type === "rally" &&
-        (target.status ?? "active") === "active" &&
-        ((target.rally_status === "forming" && Date.parse(target.rally_expires_at ?? "") > now) ||
-          (target.rally_status === "active" && Date.parse(target.end_time ?? "") > now));
-      if (!open) throw new Error("This Rally isn't taking new people anymore.");
-      const participants = readParticipants();
-      if (participants.some((p) => p.event_id === id && p.user_id === userId))
-        throw new Error("You already joined this Rally.");
-      window.localStorage.setItem(
-        LOCAL_RALLY_KEY,
-        JSON.stringify([...participants, { event_id: id, user_id: userId, joined_at: new Date(now).toISOString() }]),
-      );
-      const next = syncRally(rows, id);
-      const row = next.find((r) => r.id === id)!;
-      write(next, { type: "upsert", row });
-      return row;
+      // Tabs share localStorage; take a lock so two joins can't overwrite each other.
+      if (typeof navigator !== "undefined" && navigator.locks)
+        return navigator.locks.request(LOCAL_RALLY_KEY, () => joinLocal(id, userId));
+      return joinLocal(id, userId);
     },
     async expireRallies() {
-      const now = Date.now();
-      const rows = readLocal();
-      const expired = rows.filter(
-        (row) => row.event_type === "rally" && row.rally_status === "forming" && Date.parse(row.rally_expires_at ?? "") <= now,
-      );
-      if (expired.length === 0) return;
-      const ids = new Set(expired.map((row) => row.id));
-      const next = rows.map((row) => (ids.has(row.id) ? { ...row, rally_status: "expired" as const } : row));
-      window.localStorage.setItem(LOCAL_KEY, JSON.stringify(next));
-      next.filter((row) => ids.has(row.id)).forEach((row) => channel?.postMessage({ type: "upsert", row } satisfies EventChange));
+      const run = () => expireLocal();
+      if (typeof navigator !== "undefined" && navigator.locks) await navigator.locks.request(LOCAL_RALLY_KEY, run);
+      else run();
     },
     async listGoing() {
       return null;

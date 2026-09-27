@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bookmark,
@@ -207,6 +207,15 @@ function DrawerCard({
       ? "This event has ended. Chat is now closed."
       : null;
   const isOrganizer = event.source === "student" && Boolean(userId) && event.createdBy === userId;
+  // An anonymous Rally's creator stays anonymous in its chat too (their account still owns the row).
+  const anonymousHost = event.rally?.anonymous && event.createdBy ? event.createdBy : null;
+  const chatAuthors = useMemo(
+    () =>
+      anonymousHost
+        ? { ...chat.authors, [anonymousHost]: { name: isOrganizer ? "You (anonymous)" : "Anonymous student", avatarUrl: null } }
+        : chat.authors,
+    [chat.authors, anonymousHost, isOrganizer],
+  );
   // Anyone signed in can read; posting needs Going (or the Rally join), like the database rule.
   const canPost = isOrganizer || isGoing || (event.rally !== null && joinedRallies.has(event.id));
   const chatLock: ChatLock | null =
@@ -318,7 +327,7 @@ function DrawerCard({
         <div data-drawer-tab="chat" className="flex min-h-0 flex-1 flex-col">
           <EventChat
             messages={chat.messages}
-            authors={chat.authors}
+            authors={chatAuthors}
             loaded={chat.loaded}
             loadError={chat.error}
             onRetry={chat.retry}

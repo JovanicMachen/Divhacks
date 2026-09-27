@@ -29,11 +29,21 @@ export function useRallyRemaining(rally: RallyInfo | null): number | null {
   const expiresAt = rally?.expiresAt ?? null;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!forming) return;
-    const tick = () => setNow(Date.now());
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
+    if (!forming || !expiresAt) return;
+    const deadline = Date.parse(expiresAt);
+    let timer = 0;
+    // Stop ticking once the window has closed.
+    const tick = () => {
+      const at = Date.now();
+      setNow(at);
+      if (at >= deadline) window.clearInterval(timer);
+    };
+    timer = window.setInterval(tick, 1000);
+    const first = window.setTimeout(tick, 0);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(first);
+    };
   }, [forming, expiresAt]);
   if (!forming || !expiresAt) return null;
   return Math.max(0, Date.parse(expiresAt) - now);

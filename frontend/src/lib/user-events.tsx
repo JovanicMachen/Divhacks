@@ -226,7 +226,12 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     const due = studentEvents.some(
       (event) => event.rally?.status === "forming" && Date.parse(event.rally.expiresAt) <= lifecycleNow,
     );
-    if (due) void backend.expireRallies();
+    if (!due) return;
+    // Ask again shortly after in case this device's clock ran ahead of the server's;
+    // the database only expires a Rally once its own clock reaches the deadline.
+    void backend.expireRallies();
+    const retries = [4000, 12000, 30000].map((ms) => window.setTimeout(() => void backend.expireRallies(), ms));
+    return () => retries.forEach((timer) => window.clearTimeout(timer));
   }, [backend, userId, studentEvents, lifecycleNow]);
 
   const activity = useMemo(() => {
