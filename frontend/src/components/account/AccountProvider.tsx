@@ -81,8 +81,12 @@ function toProfile(id: string, row: Record<string, unknown> | null): Profile {
   return profile;
 }
 
+const NETWORK_ERROR = "Couldn't reach Campus Connect's servers. Check your connection and try again.";
+const isNetworkError = (message: string) => /failed to fetch|network|load failed/i.test(message);
+
 function describeDbError(error: PostgrestError | { message: string; code?: string }): string {
   const message = error.message ?? "";
+  if (isNetworkError(message)) return NETWORK_ERROR;
   if (error.code === "23505" || /duplicate key/i.test(message)) return "That username is already taken.";
   const missing = message.match(/'([a-z_]+)' column/i)?.[1];
   if (missing || error.code === "PGRST204")
@@ -93,6 +97,7 @@ function describeDbError(error: PostgrestError | { message: string; code?: strin
 }
 
 function describeAuthError(message: string): string {
+  if (isNetworkError(message)) return NETWORK_ERROR;
   if (/invalid login credentials/i.test(message)) return "That email and password don't match an account.";
   if (/email not confirmed/i.test(message)) return "Confirm your email address first — check your inbox.";
   if (/already registered/i.test(message)) return "An account with this email already exists. Sign in instead.";

@@ -37,7 +37,6 @@ export function AccountMenu() {
   const account = useAccount();
   const { status, displayName, avatarUrl, university, openAuth } = account;
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
@@ -52,7 +51,8 @@ export function AccountMenu() {
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) close();
+      const target = e.target as Node;
+      if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) close();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close(true);
@@ -89,7 +89,7 @@ export function AccountMenu() {
   const subtitle = signedIn ? university : status === "loading" ? "" : "Campus Connect";
 
   return (
-    <div ref={rootRef} className="relative">
+    <div className="relative">
       <button
         ref={buttonRef}
         type="button"
