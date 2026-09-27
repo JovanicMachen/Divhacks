@@ -231,6 +231,38 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
           }}
           savedCount={state.saved.size}
           onPostEvent={openComposer}
+          assistant={
+            geminiOpen && !isSheet ? (
+              <div className="flex min-h-[300px] flex-1 flex-col overflow-hidden rounded-[16px] border border-line shadow-[0_2px_8px_rgb(16_37_71_/_0.05)]">
+                <AskGeminiPanel
+                  layout="dock"
+                  open
+                  onClose={() => setGeminiOpen(false)}
+                  events={state.liveEvents}
+                  selectedEvent={selected}
+                  onSelectEvent={(event) => {
+                    state.selectEvent(event.id);
+                    focusEvent(event);
+                  }}
+                  userId={user?.id ?? null}
+                  authorName={displayName}
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarOpen(false);
+                  setGeminiOpen(true);
+                }}
+                className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl text-[16px] font-bold text-white shadow-[0_6px_16px_rgb(109_40_217_/_0.22)] transition-opacity duration-150 hover:opacity-95"
+                style={{ background: "linear-gradient(135deg, #4B8BFF 0%, #7C5CFF 48%, #C084FC 100%)" }}
+              >
+                <GeminiSparkle size={17} />
+                Ask Gemini
+              </button>
+            )
+          }
         />
 
         {sidebarOpen && (
@@ -300,17 +332,6 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
           />
           <MapToast toast={state.toast} onDismiss={state.dismissToast} />
           {isSheet && !geminiOpen && <AskGeminiFab onClick={() => setGeminiOpen(true)} />}
-          {!isSheet && !geminiOpen && (
-            <button
-              type="button"
-              onClick={() => setGeminiOpen(true)}
-              className="absolute bottom-[114px] right-4 z-20 hidden h-12 items-center gap-2 rounded-full px-4 text-[15px] font-bold text-white shadow-[0_8px_20px_rgb(109_40_217_/_0.28)] tablet:flex"
-              style={{ background: "linear-gradient(135deg, #4B8BFF 0%, #7C5CFF 48%, #C084FC 100%)" }}
-            >
-              <GeminiSparkle size={17} />
-              Ask Gemini
-            </button>
-          )}
           {isSheet && (
             <AskGeminiPanel
               layout="sheet"
@@ -327,24 +348,6 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             />
           )}
         </main>
-
-        {!isSheet && geminiOpen && (
-          <aside aria-label="Ask Gemini" className="hidden h-full w-[360px] shrink-0 border-l border-line tablet:flex">
-            <AskGeminiPanel
-              layout="dock"
-              open
-              onClose={() => setGeminiOpen(false)}
-              events={state.liveEvents}
-              selectedEvent={selected}
-              onSelectEvent={(event) => {
-                state.selectEvent(event.id);
-                focusEvent(event);
-              }}
-              userId={user?.id ?? null}
-              authorName={displayName}
-            />
-          </aside>
-        )}
 
         <CreateEventModal
           open={composer === "form"}

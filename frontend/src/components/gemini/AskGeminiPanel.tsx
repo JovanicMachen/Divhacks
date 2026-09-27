@@ -38,7 +38,7 @@ function seedMessage(): Message {
   return {
     id: 0,
     role: "assistant",
-    text: "Hi — I'm Gemini, on the side of the map. Ask what's happening at Columbia. If an answer is useful, share it so other students can see it too.",
+    text: "Hi — I'm Gemini. Ask what's happening at Columbia. If an answer is useful, share it so other students can see it too.",
   };
 }
 

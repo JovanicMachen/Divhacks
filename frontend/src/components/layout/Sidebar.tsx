@@ -47,10 +47,20 @@ interface SidebarProps {
   onSelect: (filter: SidebarFilter) => void;
   savedCount: number;
   onPostEvent: () => void;
+  /** Shown under Post Event: the Ask Gemini panel, or the button that opens it. */
+  assistant?: React.ReactNode;
 }
 
 /** Category rail: filters the events shown on the map. */
-export function Sidebar({ isOpen, onClose, selected: selectedFilter, onSelect, savedCount, onPostEvent }: SidebarProps) {
+export function Sidebar({
+  isOpen,
+  onClose,
+  selected: selectedFilter,
+  onSelect,
+  savedCount,
+  onPostEvent,
+  assistant,
+}: SidebarProps) {
   return (
     <aside
       aria-label="Event categories"
@@ -109,6 +119,8 @@ export function Sidebar({ isOpen, onClose, selected: selectedFilter, onSelect, s
         <Plus size={19} strokeWidth={2.8} aria-hidden />
         Post Event
       </motion.button>
+
+      {assistant && <div className="mt-3 flex min-h-0 flex-1 flex-col pb-4">{assistant}</div>}
     </aside>
   );
 }
