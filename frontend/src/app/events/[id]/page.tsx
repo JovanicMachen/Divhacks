@@ -3,13 +3,11 @@ import { notFound } from "next/navigation";
 
 import { CampusApp } from "@/components/CampusApp";
 import { OFFICIAL_EVENTS } from "@/data/mock-events";
+import { isRoutableEventId } from "@/lib/event-ids";
 
 interface EventPageProps {
   params: Promise<{ id: string }>;
 }
-
-/** Student events have uuid ids and are resolved on the client after sign-in. */
-const STUDENT_EVENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function generateStaticParams() {
   return OFFICIAL_EVENTS.map((event) => ({ id: event.id }));
@@ -27,6 +25,6 @@ export async function generateMetadata({ params }: EventPageProps): Promise<Meta
 
 export default async function EventPage({ params }: EventPageProps) {
   const { id } = await params;
-  if (!OFFICIAL_EVENTS.some((event) => event.id === id) && !STUDENT_EVENT_ID.test(id)) notFound();
+  if (!isRoutableEventId(id)) notFound();
   return <CampusApp initialEventId={id} />;
 }
