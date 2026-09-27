@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.117.2",
     "framer-motion": "^13.4.4",
     "lucide-react": "^1.48.0",

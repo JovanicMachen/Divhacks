@@ -17,8 +17,10 @@ Paste each file into the Supabase SQL editor and run it once. Every file only ad
 
 4. [`20260926240000_event_photos.sql`](supabase/migrations/20260926240000_event_photos.sql) — Adds `events.image_url` for an optional cover photo, and a check that the URL points inside the poster's own `event-images/<user id>/<event id>/` folder. It stops without changing anything if file 2 hasn't run yet or if `events` already has a photo-like column. It does not touch the `event-images` bucket or its policies.
 
+5. [`20260927001000_campus_feedback.sql`](supabase/migrations/20260927001000_campus_feedback.sql) — Creates `campus_feedback` so a student can share an Ask Gemini answer with everyone else who is signed in. Each person can only add or remove their own note. The table is added to realtime.
+
 Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
 
-**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
+**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
 
 Official campus listings are not stored here. They ship with the frontend and cannot be deleted by a student account.

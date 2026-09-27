@@ -60,8 +60,10 @@ the person signs in again at `/login`.
 | `/login` | Sign in, with a forgot-password link |
 | `/signup` | Create an account |
 | `/reset-password` | Choose a new password from the reset email link |
-| `/` | Campus map, event drawer, search, filters, Post Event |
+| `/` | Campus map, event drawer, search, filters, Post Event, Ask Gemini |
 | `/events/[id]` | Map with that event open |
 | `/profile` | Profile header, stats, and Posted / Attending / Saved tabs (`?tab=`) |
 | `/profile/edit` | Edit photo, display name, username, bio, website, university |
 | `/settings` | Account settings placeholder and sign out |
+
+Ask Gemini sits beside the map on a wide screen and as a sheet on a phone. It answers from the events on the map. Set `GEMINI_API_KEY` in `.env.local` (server only) for live Gemini replies. Sharing an answer writes `campus_feedback` so other signed-in students can read it. Run that SQL file from [`../backend`](../backend/README.md).

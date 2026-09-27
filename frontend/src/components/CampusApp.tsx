@@ -7,6 +7,9 @@ import { useAccount } from "@/components/account/AccountProvider";
 import { CreateEventModal } from "@/components/events/CreateEventModal";
 import { DeleteEventDialog } from "@/components/events/DeleteEventDialog";
 import { EventDrawer } from "@/components/events/EventDrawer";
+import { AskGeminiFab } from "@/components/gemini/AskGeminiFab";
+import { AskGeminiPanel } from "@/components/gemini/AskGeminiPanel";
+import { GeminiSparkle } from "@/components/gemini/GeminiSparkle";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopNavbar } from "@/components/layout/TopNavbar";
 import {
@@ -81,9 +84,10 @@ interface CampusAppProps {
 /** The full-screen Campus Connect shell, shared by `/` and `/events/[id]`. */
 export function CampusApp({ initialEventId }: CampusAppProps) {
   const state = useCampusState(initialEventId);
-  const { mode, displayName } = useAccount();
+  const { mode, displayName, user } = useAccount();
   const { canDelete, composeRequested, setComposeRequested } = useUserEvents();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [geminiOpen, setGeminiOpen] = useState(false);
   const mapRef = useRef<MapViewHandle>(null);
   const geo = useGeolocation();
   const [composer, setComposer] = useState<"closed" | "form" | "picking">(() =>
@@ -101,6 +105,11 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
   useEffect(() => {
     if (composeRequested) setComposeRequested(false);
   }, [composeRequested, setComposeRequested]);
+
+  // Wide screens open the side assistant once. Phones keep the map clear until they ask.
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 900px)").matches) setGeminiOpen(true);
+  }, []);
 
   /** Moves the map to an event's pin, when it has one. */
   const focusEvent = (event: CampusEvent) => {
@@ -290,7 +299,52 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             onReset={state.clearFilters}
           />
           <MapToast toast={state.toast} onDismiss={state.dismissToast} />
+          {isSheet && !geminiOpen && <AskGeminiFab onClick={() => setGeminiOpen(true)} />}
+          {!isSheet && !geminiOpen && (
+            <button
+              type="button"
+              onClick={() => setGeminiOpen(true)}
+              className="absolute bottom-[114px] right-4 z-20 hidden h-12 items-center gap-2 rounded-full px-4 text-[15px] font-bold text-white shadow-[0_8px_20px_rgb(109_40_217_/_0.28)] tablet:flex"
+              style={{ background: "linear-gradient(135deg, #4B8BFF 0%, #7C5CFF 48%, #C084FC 100%)" }}
+            >
+              <GeminiSparkle size={17} />
+              Ask Gemini
+            </button>
+          )}
+          {isSheet && (
+            <AskGeminiPanel
+              layout="sheet"
+              open={geminiOpen}
+              onClose={() => setGeminiOpen(false)}
+              events={state.events}
+              selectedEvent={selected}
+              onSelectEvent={(event) => {
+                state.selectEvent(event.id);
+                focusEvent(event);
+              }}
+              userId={user?.id ?? null}
+              authorName={displayName}
+            />
+          )}
         </main>
+
+        {!isSheet && geminiOpen && (
+          <aside aria-label="Ask Gemini" className="hidden h-full w-[360px] shrink-0 border-l border-line tablet:flex">
+            <AskGeminiPanel
+              layout="dock"
+              open
+              onClose={() => setGeminiOpen(false)}
+              events={state.events}
+              selectedEvent={selected}
+              onSelectEvent={(event) => {
+                state.selectEvent(event.id);
+                focusEvent(event);
+              }}
+              userId={user?.id ?? null}
+              authorName={displayName}
+            />
+          </aside>
+        )}
 
         <CreateEventModal
           open={composer === "form"}
