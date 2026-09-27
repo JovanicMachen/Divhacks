@@ -7,16 +7,25 @@ import {
   type AnimationPlaybackControls,
   type MotionValue,
 } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { MapPoint } from "@/lib/geo";
+import { WORLD, worldToMap, type MapPoint } from "@/lib/geo";
 
-const MIN_SCALE = 1;
-const MAX_SCALE = 3;
+/** Layer pixels per world unit at scale 1. */
+export const PX_PER_UNIT = 2.4;
+/** The map layer's size at scale 1; it keeps the world's exact aspect ratio. */
+export const LAYER_SIZE = { width: WORLD.width * PX_PER_UNIT, height: WORLD.height * PX_PER_UNIT } as const;
+
+const MAX_SCALE = 4.4;
+/** The opening view spans about this many world units across its longer side. */
+const HOME_SPAN = 400;
+/** Just south of Low Library, so the view runs from Pupin to Butler. */
+const HOME_CENTER = worldToMap({ x: 328, y: 364 });
 /** How far past the drawn edge the map may be dragged, in screen px. */
-const PAN_SLACK = 160;
+const PAN_SLACK = 60;
 const TAP_TOLERANCE = 5;
 const EASE = [0.32, 0.72, 0, 1] as const;
+const FOCUS_DURATION = 0.4;
 
 export interface MapView {
   viewportRef: React.RefObject<HTMLDivElement | null>;
@@ -27,6 +36,7 @@ export interface MapView {
   inverseScale: MotionValue<number>;
   isDragging: boolean;
   zoomBy: (factor: number) => void;
+  /** `zoom` is relative to the opening view; defaults to at least that close. */
   centerOn: (point: MapPoint, zoom?: number) => void;
   reset: () => void;
   pointerHandlers: {
@@ -40,10 +50,31 @@ export interface MapView {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Fully zoomed out: the whole world fits inside the viewport. */
+const minScaleFor = (w: number, h: number) => Math.min(w / LAYER_SIZE.width, h / LAYER_SIZE.height, 1);
+const homeScaleFor = (w: number, h: number) =>
+  clamp(Math.max(w, h) / (HOME_SPAN * PX_PER_UNIT), minScaleFor(w, h), MAX_SCALE);
+
+function measure(el: HTMLElement | null) {
+  const rect = el?.getBoundingClientRect();
+  return { w: rect?.width || 1, h: rect?.height || 1, left: rect?.left ?? 0, top: rect?.top ?? 0 };
+}
+
+/** Translation that puts map point `p` at the viewport centre at scale `s`. */
+function centeredOn({ w, h }: { w: number; h: number }, p: MapPoint, s: number) {
+  return {
+    tx: w / 2 - (s * LAYER_SIZE.width * p.x) / 100,
+    ty: h / 2 - (s * LAYER_SIZE.height * p.y) / 100,
+  };
+}
+
 /**
- * Pan / zoom state for the placeholder map. The map layer is transformed with
- * `translate(x, y) scale(s)` from its top-left corner, so a map-local point `m`
- * lands on screen at `x + s * m`.
+ * Pan / zoom state for the campus map. The layer is `LAYER_SIZE` pixels and is
+ * transformed with `translate(x, y) scale(s)` from its top-left corner, so a
+ * layer-local point `m` lands on screen at `x + s * m`.
  */
 export function useMapView(onTap?: (point: MapPoint) => void): MapView {
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -56,21 +87,25 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
   const running = useRef<AnimationPlaybackControls[]>([]);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef({ moved: false, startX: 0, startY: 0, pinchDist: 0 });
+  const lastSize = useRef<{ w: number; h: number } | null>(null);
   const onTapRef = useRef(onTap);
   useEffect(() => {
     onTapRef.current = onTap;
   }, [onTap]);
 
-  const size = () => {
-    const rect = viewportRef.current?.getBoundingClientRect();
-    return { w: rect?.width ?? 1, h: rect?.height ?? 1, left: rect?.left ?? 0, top: rect?.top ?? 0 };
-  };
+  const clampScale = useCallback((s: number) => {
+    const { w, h } = measure(viewportRef.current);
+    return clamp(s, minScaleFor(w, h), MAX_SCALE);
+  }, []);
 
+  /** Centres the layer on an axis where it is smaller than the viewport. */
   const clampTranslate = useCallback((tx: number, ty: number, s: number) => {
-    const { w, h } = size();
+    const { w, h } = measure(viewportRef.current);
+    const lw = LAYER_SIZE.width * s;
+    const lh = LAYER_SIZE.height * s;
     return {
-      x: clamp(tx, w - w * s - PAN_SLACK, PAN_SLACK),
-      y: clamp(ty, h - h * s - PAN_SLACK, PAN_SLACK),
+      x: lw <= w ? (w - lw) / 2 : clamp(tx, w - lw - PAN_SLACK, PAN_SLACK),
+      y: lh <= h ? (h - lh) / 2 : clamp(ty, h - lh - PAN_SLACK, PAN_SLACK),
     };
   }, []);
 
@@ -79,37 +114,82 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     running.current = [];
   };
 
-  const animateTo = useCallback((tx: number, ty: number, s: number) => {
-    stop();
-    const next = clampTranslate(tx, ty, s);
-    const opts = { duration: 0.38, ease: EASE };
-    running.current = [animate(x, next.x, opts), animate(y, next.y, opts), animate(scale, s, opts)];
-  }, [clampTranslate, x, y, scale]);
+  const jumpTo = useCallback(
+    (tx: number, ty: number, s: number) => {
+      stop();
+      const next = clampTranslate(tx, ty, s);
+      scale.set(s);
+      x.set(next.x);
+      y.set(next.y);
+    },
+    [clampTranslate, scale, x, y],
+  );
+
+  const animateTo = useCallback(
+    (tx: number, ty: number, s: number, duration = 0.38) => {
+      if (prefersReducedMotion()) {
+        jumpTo(tx, ty, s);
+        return;
+      }
+      stop();
+      const next = clampTranslate(tx, ty, s);
+      const opts = { duration, ease: EASE };
+      running.current = [animate(x, next.x, opts), animate(y, next.y, opts), animate(scale, s, opts)];
+    },
+    [clampTranslate, jumpTo, x, y, scale],
+  );
+
+  const homeView = useCallback(() => {
+    const { w, h } = measure(viewportRef.current);
+    const s = homeScaleFor(w, h);
+    return { ...centeredOn(measure(viewportRef.current), HOME_CENTER, s), s };
+  }, []);
+
+  // Place the opening view before the first paint.
+  useLayoutEffect(() => {
+    const { tx, ty, s } = homeView();
+    jumpTo(tx, ty, s);
+    const { w, h } = measure(viewportRef.current);
+    lastSize.current = { w, h };
+  }, [homeView, jumpTo]);
+
+  // Keep the point under the viewport centre fixed as the viewport resizes
+  // (window resizes, and the desktop drawer opening or closing).
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const { w, h } = measure(viewportRef.current);
+      const prev = lastSize.current;
+      lastSize.current = { w, h };
+      if (!prev || (prev.w === w && prev.h === h)) return;
+      if (running.current.length > 0) return;
+      const s = clampScale(scale.get());
+      const cx = (prev.w / 2 - x.get()) / scale.get();
+      const cy = (prev.h / 2 - y.get()) / scale.get();
+      jumpTo(w / 2 - cx * s, h / 2 - cy * s, s);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [clampScale, jumpTo, scale, x, y]);
 
   /** Zooms keeping the screen point (px, py) — relative to the viewport — fixed. */
   const zoomAround = useCallback(
     (factor: number, px: number, py: number, animated: boolean) => {
       const s0 = scale.get();
-      const s1 = clamp(s0 * factor, MIN_SCALE, MAX_SCALE);
+      const s1 = clampScale(s0 * factor);
       if (s1 === s0) return;
       const tx = px - ((px - x.get()) * s1) / s0;
       const ty = py - ((py - y.get()) * s1) / s0;
-      if (animated) {
-        animateTo(tx, ty, s1);
-        return;
-      }
-      stop();
-      const next = clampTranslate(tx, ty, s1);
-      scale.set(s1);
-      x.set(next.x);
-      y.set(next.y);
+      if (animated) animateTo(tx, ty, s1);
+      else jumpTo(tx, ty, s1);
     },
-    [animateTo, clampTranslate, scale, x, y],
+    [animateTo, clampScale, jumpTo, scale, x, y],
   );
 
   const zoomBy = useCallback(
     (factor: number) => {
-      const { w, h } = size();
+      const { w, h } = measure(viewportRef.current);
       zoomAround(factor, w / 2, h / 2, true);
     },
     [zoomAround],
@@ -117,14 +197,18 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
 
   const centerOn = useCallback(
     (point: MapPoint, zoom?: number) => {
-      const { w, h } = size();
-      const s = clamp(zoom ?? Math.max(scale.get(), 1.6), MIN_SCALE, MAX_SCALE);
-      animateTo(w / 2 - (s * w * point.x) / 100, h / 2 - (s * h * point.y) / 100, s);
+      const home = homeView().s;
+      const s = clampScale(zoom !== undefined ? home * zoom : Math.max(scale.get(), home));
+      const { tx, ty } = centeredOn(measure(viewportRef.current), point, s);
+      animateTo(tx, ty, s, FOCUS_DURATION);
     },
-    [animateTo, scale],
+    [animateTo, clampScale, homeView, scale],
   );
 
-  const reset = useCallback(() => animateTo(0, 0, 1), [animateTo]);
+  const reset = useCallback(() => {
+    const { tx, ty, s } = homeView();
+    animateTo(tx, ty, s);
+  }, [animateTo, homeView]);
 
   // Wheel / trackpad zoom needs a non-passive listener to stop page zoom.
   useEffect(() => {
@@ -132,7 +216,7 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const { left, top } = size();
+      const { left, top } = measure(viewportRef.current);
       const sensitivity = e.ctrlKey ? 0.012 : 0.0022;
       zoomAround(Math.exp(-e.deltaY * sensitivity), e.clientX - left, e.clientY - top, false);
     };
@@ -164,7 +248,7 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
       const [a, b] = [...pointers.current.values()];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       if (gesture.current.pinchDist > 0) {
-        const { left, top } = size();
+        const { left, top } = measure(viewportRef.current);
         zoomAround(dist / gesture.current.pinchDist, (a.x + b.x) / 2 - left, (a.y + b.y) / 2 - top, false);
       }
       gesture.current.pinchDist = dist;
@@ -188,11 +272,11 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
     if (pointers.current.size > 0) return;
     setIsDragging(false);
     if (!cancelled && !gesture.current.moved && onTapRef.current) {
-      const { w, h, left, top } = size();
+      const { left, top } = measure(viewportRef.current);
       const s = scale.get();
       onTapRef.current({
-        x: (((e.clientX - left - x.get()) / s) / w) * 100,
-        y: (((e.clientY - top - y.get()) / s) / h) * 100,
+        x: ((e.clientX - left - x.get()) / s / LAYER_SIZE.width) * 100,
+        y: ((e.clientY - top - y.get()) / s / LAYER_SIZE.height) * 100,
       });
     }
   };

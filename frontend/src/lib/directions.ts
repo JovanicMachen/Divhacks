@@ -3,13 +3,14 @@ import type { CampusEvent } from "@/types/event";
 
 /**
  * Standard Google Maps directions link — opened in a new tab, no maps SDK.
- * Built-in events route to their street address; events pinned in this session
- * route to the coordinates of their pin.
+ * Official listings route to their street address; student events route to
+ * the calibrated coordinates of their pin.
  */
 export function directionsUrl(event: CampusEvent): string {
-  const destination = event.isTemporary
+  const pinned = event.source === "student" && event.mapX !== null && event.mapY !== null;
+  const destination = pinned
     ? (() => {
-        const { lat, lng } = mapToGeo({ x: event.mapX, y: event.mapY });
+        const { lat, lng } = mapToGeo({ x: event.mapX!, y: event.mapY! });
         return `${lat.toFixed(6)},${lng.toFixed(6)}`;
       })()
     : `${event.address}, New York, NY`;

@@ -1,9 +1,4 @@
-/**
- * Core domain types for Campus Connect.
- *
- * Phase 1 is presentation-only: these shapes exist so the visual prototype has
- * realistic data, and so a later backend can return the same structure.
- */
+/** Core domain types for Campus Connect. */
 
 export type EventCategory =
   | "Free Food"
@@ -33,6 +28,9 @@ export type MarkerIcon =
   | "run"
   | "users";
 
+/** Official Columbia listings vs. events posted by students in the app. */
+export type EventSource = "official" | "student";
+
 export interface CampusEvent {
   id: string;
   title: string;
@@ -40,10 +38,15 @@ export interface CampusEvent {
   locationName: string;
   address: string;
   description: string;
-  /** Horizontal position on the campus map, 0–100 (% of map width). */
-  mapX: number;
-  /** Vertical position on the campus map, 0–100 (% of map height). */
-  mapY: number;
+  /** Campus location registry id, when the location resolved to a known place. */
+  locationId: string | null;
+  /**
+   * Pin position on the campus map, 0–100 (% of map width / height). Null when
+   * the location isn't on the map: the event stays in search and lists but
+   * gets no marker.
+   */
+  mapX: number | null;
+  mapY: number | null;
   distance: string;
   timeStatus: string;
   startTime: string;
@@ -56,11 +59,12 @@ export interface CampusEvent {
   iconType: MarkerIcon;
   /** Phrase in `description` rendered in bold, as in the reference drawer. */
   emphasis?: string;
-  /**
-   * Created in this browser session only. Temporary events vanish on refresh and
-   * have no public URL until server persistence exists.
-   */
-  isTemporary?: boolean;
+  source: EventSource;
+  /** Auth user id of the student who posted it; null for official listings. */
+  createdBy: string | null;
+  /** ISO timestamps; official demo listings only carry display labels. */
+  startsAt?: string;
+  endsAt?: string;
 }
 
 /** Sidebar selection: a category, every event, or the user's saved events. */
@@ -77,8 +81,10 @@ export interface EventDraft {
   description: string;
   category: EventCategory;
   locationName: string;
+  /** Registry place picked from the list, or matched from a map tap. */
+  locationId: string | null;
   startTime: string;
   endTime: string;
-  /** Pin position on the campus map in %, set via "Choose on map". */
+  /** Pin position on the campus map in %, from the picked place or a map tap. */
   point: { x: number; y: number } | null;
 }

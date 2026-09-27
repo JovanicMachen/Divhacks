@@ -1,13 +1,14 @@
 /**
- * Maps real coordinates onto the stylised campus map and back.
+ * Coordinate systems for the illustrated campus map.
  *
- * The placeholder map is drawn in "Manhattan grid" orientation: streets run
- * left–right, avenues top–bottom. The real grid is rotated ~29° east of true
- * north, so positions are projected onto the avenue/street axes and scaled by
- * the map's own block spacing (Broadway→Amsterdam, W 116th→W 113th).
- *
- * This is an approximation for a hand-drawn map. Phase 2 (Mapbox) replaces it
- * with a real projection.
+ * - World units: the coordinate space of Columbia's Morningside campus map PDF
+ *   (612 × 792 points, streets drawn left–right, avenues top–bottom). The map
+ *   art is authored in these units.
+ * - Map points: % of the drawn world rectangle (`WORLD`), used to position
+ *   markers, labels and the user's location dot on the map layer.
+ * - Lat/lng: real coordinates, related to world units by an affine transform
+ *   fitted (least squares) to the OpenStreetMap positions of 22 campus
+ *   buildings — 8.5 m RMS error, with the street grid at −29.5° as in reality.
  */
 
 export interface LatLng {
@@ -22,49 +23,76 @@ export interface MapPoint {
   y: number;
 }
 
-/** Broadway & W 116th St, where the map's Broadway and 116th labels cross. */
-const ORIGIN_GEO: LatLng = { lat: 40.80797, lng: -73.96391 };
-const ORIGIN_MAP: MapPoint = { x: 12.2, y: 11.2 };
+/** A position in the reference map's own units. */
+export interface WorldPoint {
+  x: number;
+  y: number;
+}
 
-const GRID_BEARING = (29 * Math.PI) / 180;
+/** Riverside Park to Morningside Park, north of 122nd St to south of 110th St. */
+export const WORLD = { x: 40, y: 10, width: 560, height: 780 } as const;
+
+export function worldToMap({ x, y }: WorldPoint): MapPoint {
+  return {
+    x: ((x - WORLD.x) / WORLD.width) * 100,
+    y: ((y - WORLD.y) / WORLD.height) * 100,
+  };
+}
+
+export function mapToWorld({ x, y }: MapPoint): WorldPoint {
+  return {
+    x: WORLD.x + (x / 100) * WORLD.width,
+    y: WORLD.y + (y / 100) * WORLD.height,
+  };
+}
+
+const ORIGIN: LatLng = { lat: 40.8075, lng: -73.962 };
 const METERS_PER_DEG_LAT = 111_320;
-const METERS_PER_DEG_LNG = METERS_PER_DEG_LAT * Math.cos((ORIGIN_GEO.lat * Math.PI) / 180);
+const METERS_PER_DEG_LNG = METERS_PER_DEG_LAT * Math.cos((ORIGIN.lat * Math.PI) / 180);
 
-/** Broadway → Amsterdam Ave is ~290 m and spans 80% of the map width. */
-const CROSSTOWN_METERS_PER_PCT = 290 / 80;
-/** One street block is ~80 m and spans ~24.9% of the map height. */
-const UPTOWN_METERS_PER_PCT = 80 / 24.9;
+/** metres east / north of ORIGIN = [a b; d e] · world + [c; f] */
+const A = 1.192824;
+const B = -0.656802;
+const C = -166.11388;
+const D = -0.675222;
+const E = -1.165088;
+const F = 678.63069;
+const DET = A * E - B * D;
+
+function worldToMeters({ x, y }: WorldPoint) {
+  return { east: A * x + B * y + C, north: D * x + E * y + F };
+}
+
+export function mapToGeo(point: MapPoint): LatLng {
+  const { east, north } = worldToMeters(mapToWorld(point));
+  return {
+    lat: ORIGIN.lat + north / METERS_PER_DEG_LAT,
+    lng: ORIGIN.lng + east / METERS_PER_DEG_LNG,
+  };
+}
 
 export function geoToMap({ lat, lng }: LatLng): MapPoint {
-  const north = (lat - ORIGIN_GEO.lat) * METERS_PER_DEG_LAT;
-  const east = (lng - ORIGIN_GEO.lng) * METERS_PER_DEG_LNG;
-  const uptown = north * Math.cos(GRID_BEARING) + east * Math.sin(GRID_BEARING);
-  const crosstown = -north * Math.sin(GRID_BEARING) + east * Math.cos(GRID_BEARING);
-  return {
-    x: ORIGIN_MAP.x + crosstown / CROSSTOWN_METERS_PER_PCT,
-    y: ORIGIN_MAP.y - uptown / UPTOWN_METERS_PER_PCT,
-  };
+  const east = (lng - ORIGIN.lng) * METERS_PER_DEG_LNG - C;
+  const north = (lat - ORIGIN.lat) * METERS_PER_DEG_LAT - F;
+  return worldToMap({
+    x: (E * east - B * north) / DET,
+    y: (A * north - D * east) / DET,
+  });
 }
 
-export function mapToGeo({ x, y }: MapPoint): LatLng {
-  const crosstown = (x - ORIGIN_MAP.x) * CROSSTOWN_METERS_PER_PCT;
-  const uptown = (ORIGIN_MAP.y - y) * UPTOWN_METERS_PER_PCT;
-  const north = uptown * Math.cos(GRID_BEARING) - crosstown * Math.sin(GRID_BEARING);
-  const east = uptown * Math.sin(GRID_BEARING) + crosstown * Math.cos(GRID_BEARING);
-  return {
-    lat: ORIGIN_GEO.lat + north / METERS_PER_DEG_LAT,
-    lng: ORIGIN_GEO.lng + east / METERS_PER_DEG_LNG,
-  };
-}
-
-/** True when a point falls on the drawn campus area. */
+/** True when a point falls inside the drawn map area. */
 export function isOnMap({ x, y }: MapPoint): boolean {
   return x >= 0 && x <= 100 && y >= 0 && y <= 100;
 }
 
+/** Straight-line distance between two map points, in metres. */
+export function metersBetween(a: MapPoint, b: MapPoint): number {
+  const p = worldToMeters(mapToWorld(a));
+  const q = worldToMeters(mapToWorld(b));
+  return Math.hypot(p.east - q.east, p.north - q.north);
+}
+
 /** Approximate walking time between two map points (~80 m per minute). */
 export function walkingMinutes(a: MapPoint, b: MapPoint): number {
-  const dx = (a.x - b.x) * CROSSTOWN_METERS_PER_PCT;
-  const dy = (a.y - b.y) * UPTOWN_METERS_PER_PCT;
-  return Math.max(1, Math.round(Math.hypot(dx, dy) / 80));
+  return Math.max(1, Math.round(metersBetween(a, b) / 80));
 }

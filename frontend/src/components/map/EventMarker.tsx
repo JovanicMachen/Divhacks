@@ -7,6 +7,7 @@ import { BookOpen, BriefcaseBusiness, GraduationCap, Music, Users } from "lucide
 import { PizzaSliceIcon, RunnerIcon } from "@/components/icons/CategoryIcons";
 import { MARKER_PALETTE } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import type { MapPoint } from "@/lib/geo";
 import type { CampusEvent, MarkerIcon } from "@/types/event";
 
 type IconComponent = ComponentType<{
@@ -32,6 +33,8 @@ const MARKER_ICONS: Record<MarkerIcon, IconComponent> = {
 
 interface EventMarkerProps {
   event: CampusEvent;
+  /** The event's pin position; events without one get no marker. */
+  point: MapPoint;
   selected: boolean;
   onSelect: (eventId: string) => void;
   /** 1 / map zoom, so the pin keeps its size while the map scales under it. */
@@ -48,19 +51,22 @@ export function MapAnchor({
   x,
   y,
   inverseScale,
+  opacity,
   children,
   className,
 }: {
   x: number;
   y: number;
   inverseScale: MotionValue<number>;
+  /** Lets zoom-dependent labels fade in and out. */
+  opacity?: MotionValue<number>;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
     <motion.div
       className={cn("pointer-events-none absolute h-0 w-0", className)}
-      style={{ left: `${x}%`, top: `${y}%`, scale: inverseScale, transformOrigin: "0 0" }}
+      style={{ left: `${x}%`, top: `${y}%`, scale: inverseScale, opacity, transformOrigin: "0 0" }}
     >
       {children}
     </motion.div>
@@ -99,11 +105,12 @@ export function MarkerPin({
 }
 
 /**
- * A single teardrop pin anchored by its tip to `event.mapX` / `event.mapY`.
+ * A single teardrop pin anchored by its tip to the event's map position.
  * Only the selected marker carries the soft outer glow.
  */
 export function EventMarker({
   event,
+  point,
   selected,
   onSelect,
   inverseScale,
@@ -114,7 +121,7 @@ export function EventMarker({
   const height = selected ? 50 : 44;
 
   return (
-    <MapAnchor x={event.mapX} y={event.mapY} inverseScale={inverseScale} className={selected ? "z-[2]" : "z-[1]"}>
+    <MapAnchor x={point.x} y={point.y} inverseScale={inverseScale} className={selected ? "z-[2]" : "z-[1]"}>
     <div
       className="absolute"
       style={{ transform: "translate(-50%, -100%)" }}

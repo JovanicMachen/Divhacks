@@ -4,7 +4,7 @@ import type { ComponentType } from "react";
 import { ChevronRight, Radio } from "lucide-react";
 
 import { PeopleIcon, PizzaSliceIcon } from "@/components/icons/CategoryIcons";
-import { CAMPUS_STATS } from "@/data/mock-events";
+import { ACTIVE_ON_CAMPUS } from "@/data/mock-events";
 import { formatCount } from "@/lib/utils";
 
 type IconComponent = ComponentType<{
@@ -20,36 +20,21 @@ interface Stat {
   iconClass: string;
 }
 
-const STATS: Stat[] = [
-  {
-    value: CAMPUS_STATS.happeningNow,
-    label: "happening now",
-    icon: Radio,
-    iconClass: "text-[#F5453A]",
-  },
-  {
-    value: CAMPUS_STATS.activeOnCampus,
-    label: "active on campus",
-    icon: PeopleIcon,
-    iconClass: "text-brand",
-  },
-  {
-    value: CAMPUS_STATS.freeFoodEvents,
-    label: "free food events",
-    icon: PizzaSliceIcon,
-    iconClass: "",
-  },
-];
-
 /**
  * Floating campus summary bar. Sits above the bottom edge of the map rather
- * than in document flow, so it never pushes the map around.
+ * than in document flow, so it never pushes the map around. Event counts are
+ * derived from the loaded events; "active on campus" has no live source yet.
  */
-export function CampusStats() {
+export function CampusStats({ happeningNow, freeFood }: { happeningNow: number; freeFood: number }) {
+  const stats: Stat[] = [
+    { value: happeningNow, label: "happening now", icon: Radio, iconClass: "text-[#F5453A]" },
+    { value: ACTIVE_ON_CAMPUS, label: "active on campus", icon: PeopleIcon, iconClass: "text-brand" },
+    { value: freeFood, label: freeFood === 1 ? "free food event" : "free food events", icon: PizzaSliceIcon, iconClass: "" },
+  ];
   return (
     <div className="pointer-events-none absolute bottom-5 left-1/2 z-10 w-[84%] max-w-[760px] -translate-x-1/2">
       <dl className="pointer-events-auto flex h-[83px] items-stretch overflow-hidden rounded-[20px] bg-panel shadow-float">
-        {STATS.map((stat, index) => {
+        {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
             <div
