@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowRight,
   Bookmark,
   CalendarDays,
   ChevronDown,
@@ -38,7 +39,10 @@ export function AccountMenu() {
   const account = useAccount();
   const { status, displayName, avatarUrl, university } = account;
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  // Remembering where the menu was opened closes it on any route change.
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  const open = openAt === pathname;
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
@@ -46,7 +50,7 @@ export function AccountMenu() {
   const signedIn = status === "signedIn";
 
   const close = useCallback((restoreFocus = false) => {
-    setOpen(false);
+    setOpenAt(null);
     if (restoreFocus) buttonRef.current?.focus();
   }, []);
 
@@ -84,7 +88,7 @@ export function AccountMenu() {
       router.push("/login");
       return;
     }
-    setOpen((o) => !o);
+    setOpenAt(open ? null : pathname);
   };
 
   const name = signedIn ? displayName : status === "loading" ? "" : "Sign In";
@@ -102,7 +106,7 @@ export function AccountMenu() {
         aria-label={signedIn ? `Account menu for ${displayName}` : "Sign in to Campus Connect"}
         aria-busy={status === "loading"}
         className={cn(
-          "flex cursor-pointer items-center gap-2.5 rounded-full py-1 pl-1 pr-1 transition-colors duration-150 hover:bg-[#f5f7fb] tablet:pr-2",
+          "flex cursor-pointer items-center gap-2.5 rounded-full py-1 pl-1 pr-1 outline-none transition-colors duration-150 hover:bg-[#f5f7fb] focus-visible:ring-4 focus-visible:ring-brand/25 tablet:pr-2",
           open && "bg-[#f5f7fb]",
         )}
       >
@@ -119,7 +123,7 @@ export function AccountMenu() {
           size={18}
           strokeWidth={2.2}
           aria-hidden
-          className={cn("hidden text-faint transition-transform duration-150 desktop:block", open && "rotate-180")}
+          className={cn("hidden text-faint transition-transform duration-200 desktop:block", open && "rotate-180")}
         />
       </button>
 
@@ -210,9 +214,10 @@ function AccountSummary({ onNavigate }: { onNavigate: () => void }) {
         href="/profile"
         role="menuitem"
         onClick={onNavigate}
-        className="mt-3.5 flex h-10 w-full items-center justify-center rounded-[12px] bg-brand-soft text-[14px] font-bold text-brand outline-none transition-colors duration-150 hover:bg-[#dde8fa] focus-visible:ring-4 focus-visible:ring-brand/20"
+        className="mt-3.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-[12px] bg-brand-soft text-[14px] font-bold text-brand outline-none transition-colors duration-150 hover:bg-[#dde8fa] focus-visible:ring-4 focus-visible:ring-brand/20"
       >
         View Profile
+        <ArrowRight size={16} strokeWidth={2.4} aria-hidden />
       </Link>
     </div>
   );
