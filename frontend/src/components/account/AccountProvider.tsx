@@ -93,7 +93,7 @@ function describeDbError(error: PostgrestError | { message: string; code?: strin
   if (error.code === "23505" || /duplicate key/i.test(message)) return "That username is already taken.";
   const missing = message.match(/'([a-z_]+)' column/i)?.[1];
   if (missing || error.code === "PGRST204")
-    return `Your profiles table is missing the "${missing ?? "required"}" column. Run the migration in supabase/migrations first.`;
+    return `Your profiles table is missing the "${missing ?? "required"}" column. Run backend/supabase/migrations in the Supabase SQL editor first.`;
   if (error.code === "42501" || /row-level security/i.test(message))
     return "You don't have permission to update this profile. Check the profiles RLS policies.";
   return message || "Something went wrong while saving. Please try again.";

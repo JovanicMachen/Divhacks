@@ -6,7 +6,7 @@ import { formatClock, humanizeMinutes, todayLabel } from "./utils";
 import { getCampusLocation } from "@/data/campus-locations";
 import type { CampusEvent, EventCategory, EventSource } from "@/types/event";
 
-/** A row of `public.events` (see supabase/migrations). */
+/** A row of `public.events` (see backend/supabase/migrations). */
 export interface EventRow {
   id: string;
   created_by: string;
@@ -46,7 +46,7 @@ function describe(error: PostgrestError | { message: string; code?: string }, ac
   const message = error.message ?? "";
   if (/failed to fetch|network|load failed/i.test(message)) return new Error(NETWORK_ERROR);
   if (error.code === "42P01" || error.code === "PGRST205" || /could not find the table|does not exist/i.test(message))
-    return new Error("The events table doesn't exist yet. Run the SQL in supabase/migrations first.");
+    return new Error("The events table doesn't exist yet. Run backend/supabase/migrations in the Supabase SQL editor first.");
   if (error.code === "42501" || /row-level security/i.test(message))
     return new Error(`You don't have permission to ${action} this event.`);
   return new Error(message || `Couldn't ${action} the event. Please try again.`);

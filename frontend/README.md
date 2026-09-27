@@ -34,12 +34,9 @@ can be exercised, and the UI says so.
 
 ### Database
 
-`/profile` and `/profile/edit` read and write `public.profiles` (keyed by the
-auth user's UUID). The columns they need, a username format check, a unique
-username index, RLS policies, and the public `avatars` Storage bucket are in
-`supabase/migrations/20260926120000_profile_account_fields.sql`. The migration is
-additive (`add column if not exists`, no drops or renames) — review it, then run
-it in the Supabase SQL editor or with `supabase db push`.
+This folder does not contain the database. Profile and event tables live in
+[`../backend`](../backend/README.md). Run those two SQL files in the Supabase
+SQL editor before sign-in, profiles, or posted events can be stored.
 
 ### Auth
 

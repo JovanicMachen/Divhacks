@@ -56,9 +56,9 @@ interface UserEventsValue {
 const UserEventsContext = createContext<UserEventsValue | null>(null);
 
 /**
- * Going / Saved are kept per account in this browser's localStorage. The
- * migration also creates event_attendees / saved_events tables for when
- * official listings live in the database too.
+ * Going / Saved are kept per account in this browser's localStorage.
+ * backend/supabase/migrations also creates event_attendees / saved_events
+ * for when those lists move to the database.
  */
 const activityKey = (userId: string) => `campus-connect.activity.${userId}`;
 const activityListeners = new Set<() => void>();
