@@ -54,7 +54,7 @@ function applyChange(rows: NotificationRow[], change: NotificationChange): Notif
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
   const { user, mode } = useAccount();
   const userId = user?.id ?? null;
-  const { events, ready, going, saved, myEvents } = useUserEvents();
+  const { events, ready, going, saved, myEvents, joinedRallies } = useUserEvents();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [tickNow, setNow] = useState(() => Date.now());
   // Also step forward the moment any event starts or ends, so "starting now" isn't a minute late.
@@ -112,7 +112,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     for (const event of [...events.filter((e) => going.has(e.id) || saved.has(e.id)), ...myEvents])
       interests.add(event.category);
     const known = new Set(current.rows.map((row) => row.dedupe_key));
-    const fresh = smartNotifications({ events, going, saved, userId, interests, now }).filter(
+    const fresh = smartNotifications({ events, going, saved, userId, interests, rallies: joinedRallies, now }).filter(
       (row) => !known.has(row.dedupe_key) && !attempted.current.has(row.dedupe_key),
     );
     if (fresh.length === 0) return;
@@ -129,7 +129,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       },
       (error: Error) => console.warn("Couldn't save notifications:", error.message),
     );
-  }, [current, ready, userId, events, going, saved, myEvents, now]);
+  }, [current, ready, userId, events, going, saved, myEvents, joinedRallies, now]);
 
   const markRead = useCallback(
     (id: string) => {

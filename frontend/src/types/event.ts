@@ -75,6 +75,29 @@ export interface CampusEvent {
   abandonedAt?: string | null;
   /** Organizer message pinned to the top of the event chat. */
   pinnedMessageId?: string | null;
+  /** A normal listing, or a short-lived Rally that needs enough people to happen. */
+  kind: EventKind;
+  /** Rally state from the database; null for normal events. */
+  rally: RallyInfo | null;
+  /** Posted by an organization account (set by the database, not the poster). */
+  organizationEvent: boolean;
+  /** Informational only: no payment is taken in the app. */
+  isPaid: boolean;
+  priceDisplay: string | null;
+}
+
+export type EventKind = "event" | "rally";
+export type RallyStatus = "forming" | "active" | "expired";
+
+export interface RallyInfo {
+  status: RallyStatus;
+  minParticipants: number;
+  /** When a forming Rally closes if it hasn't filled. */
+  expiresAt: string;
+  anonymous: boolean;
+  /** Counted by the database from rally_participants. */
+  participantCount: number;
+  activatedAt: string | null;
 }
 
 /** Stored lifecycle. Ended is derived from end_time, so the app only reads `active` and `abandoned`. */
@@ -82,6 +105,9 @@ export type EventStatus = "active" | "abandoned" | "ended";
 
 /** Sidebar selection: a category, every event, or the user's saved events. */
 export type SidebarFilter = "all" | "saved" | EventCategory;
+
+/** Normal events only, Rallies only, or both. */
+export type KindFilter = "all" | "events" | "rally";
 
 /** Single-select view pills floating over the map. */
 export type MapPill = "trending" | "nearMe" | "freeFood";
@@ -102,4 +128,16 @@ export interface EventDraft {
   point: { x: number; y: number } | null;
   /** Optional cover photo, uploaded when the event is posted. */
   photo: File | null;
+  kind: EventKind;
+  rallyMinParticipants: number;
+  rallyWindowMinutes: number;
+  rallyAnonymous: boolean;
+  /** Organization accounts only. */
+  isPaid: boolean;
+  priceDisplay: string;
 }
+
+export const RALLY_LIMITS = {
+  minParticipants: { min: 2, max: 20, default: 3 },
+  windowMinutes: { min: 2, max: 15, default: 5 },
+} as const;

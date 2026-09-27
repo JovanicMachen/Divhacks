@@ -1,8 +1,9 @@
 "use client";
 
-import { Ban, Clock } from "lucide-react";
+import { Ban, Clock, Radar } from "lucide-react";
 
 import { useEventCountdown, type EventCountdown } from "@/lib/event-clock";
+import { formatRallyClock, useRallyRemaining } from "@/lib/rally";
 import { cn } from "@/lib/utils";
 import type { CampusEvent } from "@/types/event";
 
@@ -28,7 +29,7 @@ const SIZES = {
 } as const;
 
 interface CountdownChipProps {
-  event: Pick<CampusEvent, "startsAt" | "endsAt" | "status">;
+  event: Pick<CampusEvent, "startsAt" | "endsAt" | "status"> & Partial<Pick<CampusEvent, "rally">>;
   size?: keyof typeof SIZES;
   /** Render nothing once the event has ended (e.g. where "Ended" is already said). */
   hideEnded?: boolean;
@@ -41,7 +42,31 @@ interface CountdownChipProps {
  */
 export function CountdownChip({ event, size = "sm", hideEnded = false, className }: CountdownChipProps) {
   const countdown = useEventCountdown(event);
+  const rally = event.rally ?? null;
+  const rallyLeft = useRallyRemaining(rally);
   const s = SIZES[size];
+  if (rally && event.status !== "abandoned") {
+    const expired = rally.status === "expired" || (rally.status === "forming" && rallyLeft === 0);
+    if (expired && hideEnded) return null;
+    const label = expired
+      ? "Rally expired"
+      : rally.status === "active"
+        ? `Rally on · ${rally.participantCount} joined`
+        : `Rally · ${rally.participantCount}/${rally.minParticipants} · ${formatRallyClock(rallyLeft ?? 0)}`;
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center whitespace-nowrap rounded-full tabular-nums",
+          s.box,
+          expired ? "bg-field text-faint" : rally.status === "active" ? "bg-brand text-white" : "bg-ink text-white",
+          className,
+        )}
+      >
+        <Radar size={s.icon} strokeWidth={2.4} aria-hidden />
+        {label}
+      </span>
+    );
+  }
   if (event.status === "abandoned") {
     if (hideEnded) return null;
     return (

@@ -1,4 +1,4 @@
-import { UserRound } from "lucide-react";
+import { Building2, UserRound } from "lucide-react";
 
 import { initialsFor } from "@/lib/account";
 import { cn } from "@/lib/utils";
@@ -9,10 +9,30 @@ interface AvatarProps {
   name?: string | null;
   size: number;
   className?: string;
+  /** Organization accounts get a purple ring and a small building badge. */
+  org?: boolean;
 }
 
-export function Avatar({ src, name, size, className }: AvatarProps) {
-  const base = cn("shrink-0 rounded-full ring-1 ring-line-strong", className);
+export function Avatar({ org, ...props }: AvatarProps) {
+  if (!org) return <AvatarImage {...props} />;
+  const badge = Math.max(14, Math.round(props.size * 0.3));
+  return (
+    <span className={cn("relative inline-grid shrink-0", props.className)} style={{ width: props.size, height: props.size }}>
+      <AvatarImage {...props} className="ring-2 ring-[#7C3AED] ring-offset-2 ring-offset-white" plain />
+      <span
+        aria-label="Organization"
+        role="img"
+        className="absolute -bottom-[2px] -right-[2px] grid place-items-center rounded-full bg-[#7C3AED] text-white ring-2 ring-white"
+        style={{ width: badge, height: badge }}
+      >
+        <Building2 size={Math.round(badge * 0.58)} strokeWidth={2.5} aria-hidden />
+      </span>
+    </span>
+  );
+}
+
+function AvatarImage({ src, name, size, className, plain }: Omit<AvatarProps, "org"> & { plain?: boolean }) {
+  const base = cn("shrink-0 rounded-full", !plain && "ring-1 ring-line-strong", className);
   const style = { width: size, height: size };
 
   if (src) {

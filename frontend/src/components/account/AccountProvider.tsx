@@ -31,6 +31,7 @@ import {
   type AuthFailure,
 } from "@/lib/auth-errors";
 import { passwordResetRedirectUrl } from "@/lib/password-reset";
+import { requestOrganization } from "@/lib/demo-codes";
 import { localAccountStore } from "@/lib/local-account";
 import { AVATAR_BUCKET, getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { AccountUser, Profile, ProfileInput } from "@/types/profile";
@@ -63,6 +64,10 @@ interface AccountContextValue {
   requestPasswordReset: (email: string) => Promise<AuthFailure | null>;
   updatePassword: (password: string) => Promise<AuthFailure | null>;
   saveProfile: (input: ProfileInput, avatar: AvatarChange) => Promise<string | null>;
+  /** Organization account, verified by the server. */
+  isOrg: boolean;
+  /** Sends the organization code to the server; resolves with an error message, or null once verified. */
+  becomeOrganization: (code: string) => Promise<string | null>;
   /** True after this tab follows a valid Supabase recovery link. */
   passwordRecovery: boolean;
   /** One-off confirmation shown on the next screen, e.g. after saving. */
@@ -72,7 +77,7 @@ interface AccountContextValue {
 
 const AccountContext = createContext<AccountContextValue | null>(null);
 
-const PROFILE_FIELDS: (keyof Omit<Profile, "id">)[] = [
+const PROFILE_FIELDS: (keyof Omit<Profile, "id" | "is_org">)[] = [
   "display_name",
   "username",
   "bio",
@@ -94,6 +99,7 @@ function toProfile(id: string, row: Record<string, unknown> | null): Profile {
     const value = row?.[field];
     profile[field] = typeof value === "string" && value ? value : null;
   }
+  profile.is_org = row?.is_org === true;
   return profile;
 }
 
@@ -277,7 +283,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
             return "That image couldn't be read. Try a JPG or PNG.";
           }
         }
-        localAccountStore.saveProfile({ id: user.id, ...fields, avatar_url: avatarUrl });
+        localAccountStore.saveProfile({ id: user.id, ...fields, avatar_url: avatarUrl, is_org: profile?.is_org ?? false });
         return null;
       }
 
@@ -318,6 +324,22 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     [supabase, user, profile],
   );
 
+  const becomeOrganization = useCallback(
+    async (code: string): Promise<string | null> => {
+      if (!user) return "You need to be signed in.";
+      const failure = await requestOrganization(code, supabase);
+      if (failure) return failure;
+      if (!supabase) {
+        localAccountStore.saveProfile({ ...(profile ?? toProfile(user.id, null)), id: user.id, is_org: true });
+        return null;
+      }
+      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      setRemoteProfile(toProfile(user.id, data));
+      return null;
+    },
+    [supabase, user, profile],
+  );
+
   const value = useMemo<AccountContextValue>(() => {
     const displayName = displayNameFor(user, profile);
     return {
@@ -336,11 +358,27 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       requestPasswordReset,
       updatePassword,
       saveProfile,
+      isOrg: profile?.is_org === true,
+      becomeOrganization,
       passwordRecovery,
       flash,
       setFlash,
     };
-  }, [status, mode, user, profile, signIn, signUp, signOut, requestPasswordReset, updatePassword, saveProfile, passwordRecovery, flash]);
+  }, [
+    status,
+    mode,
+    user,
+    profile,
+    signIn,
+    signUp,
+    signOut,
+    requestPasswordReset,
+    updatePassword,
+    saveProfile,
+    becomeOrganization,
+    passwordRecovery,
+    flash,
+  ]);
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }

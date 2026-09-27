@@ -188,6 +188,7 @@ function SearchField({ query, onQueryChange, results, onSelectResult }: SearchPr
                         {event.title}
                       </span>
                       <span className="block truncate text-[12.5px] font-medium text-muted">
+                        {event.organizationEvent && <span className="font-bold text-[#6D28D9]">Organization · </span>}
                         {event.locationName} · {event.category} · {event.host}
                       </span>
                     </span>

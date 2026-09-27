@@ -19,6 +19,8 @@ import {
   type EventsBackend,
   type NewEventRow,
 } from "./events-backend";
+import { requestAdminAction, type AdminAction } from "./demo-codes";
+import { useLifecycleNow } from "./event-clock";
 import { getSupabase } from "./supabase/client";
 import { useAccount } from "@/components/account/AccountProvider";
 import { OFFICIAL_EVENTS } from "@/data/mock-events";
@@ -43,8 +45,16 @@ interface UserEventsValue {
   cancelEvent: (id: string) => Promise<string | null>;
   /** Pins (or with null, unpins) an organizer message in the event chat. */
   pinMessage: (eventId: string, messageId: string | null) => Promise<string | null>;
+  /** Rallies the signed-in user has joined, including ones they started. */
+  joinedRallies: Set<string>;
+  /** Resolves with an error message, or null once joined. */
+  joinRally: (id: string) => Promise<string | null>;
+  /** Temporary demo admin override; the server checks the code. */
+  adminEventAction: (id: string, action: AdminAction, code: string) => Promise<string | null>;
   /** Called with events removed by someone else (e.g. deleted in another tab). */
   onRemoteDelete: (listener: (id: string) => void) => () => void;
+  /** Called once per browser session for each new Rally someone else starts. */
+  onNewRally: (listener: (event: CampusEvent) => void) => () => void;
   going: Set<string>;
   toggleGoing: (id: string) => void;
   saved: Set<string>;
@@ -97,6 +107,21 @@ function updateActivity(userId: string, update: (activity: Activity) => Activity
   activityListeners.forEach((listener) => listener());
 }
 
+const SEEN_RALLIES_KEY = "campus-connect.seen-rallies";
+
+/** Rally ids this tab session has already announced (or that existed on load). */
+function markRalliesSeen(ids: string[]): string[] {
+  let seen: string[] = [];
+  try {
+    seen = JSON.parse(window.sessionStorage.getItem(SEEN_RALLIES_KEY) ?? "[]");
+  } catch {
+    seen = [];
+  }
+  const fresh = ids.filter((id) => !seen.includes(id));
+  if (fresh.length) window.sessionStorage.setItem(SEEN_RALLIES_KEY, JSON.stringify([...seen, ...fresh].slice(-200)));
+  return fresh;
+}
+
 const toggledList = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
 function applyChange(rows: EventRow[], change: EventChange): EventRow[] {
@@ -119,6 +144,7 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
 
   const [loaded, setLoaded] = useState<{ userId: string; rows: EventRow[]; error: string | null } | null>(null);
   const [remoteDeleteListeners] = useState(() => new Set<(id: string) => void>());
+  const [newRallyListeners] = useState(() => new Set<(event: CampusEvent) => void>());
   const [focusId, setFocusId] = useState<string | null>(null);
   const [composeRequested, setComposeRequested] = useState(false);
 
@@ -127,7 +153,11 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     let active = true;
     const reload = () =>
       backend.list().then(
-        (rows) => active && setLoaded({ userId, rows, error: null }),
+        (rows) => {
+          if (!active) return;
+          markRalliesSeen(rows.filter((row) => row.event_type === "rally").map((row) => row.id));
+          setLoaded({ userId, rows, error: null });
+        },
         (error: Error) => {
           console.warn("Could not load events:", error.message);
           if (active) setLoaded({ userId, rows: [], error: error.message });
@@ -140,13 +170,23 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
         return;
       }
       if (change.type === "delete") remoteDeleteListeners.forEach((listener) => listener(change.id));
+      if (
+        change.type === "upsert" &&
+        change.row.event_type === "rally" &&
+        change.row.rally_status === "forming" &&
+        change.row.created_by !== userId &&
+        markRalliesSeen([change.row.id]).length > 0
+      ) {
+        const event = rowToEvent(change.row);
+        newRallyListeners.forEach((listener) => listener(event));
+      }
       setLoaded((prev) => (prev && prev.userId === userId ? { ...prev, rows: applyChange(prev.rows, change) } : prev));
     });
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [backend, userId, remoteDeleteListeners]);
+  }, [backend, userId, remoteDeleteListeners, newRallyListeners]);
 
   const rows = loaded && loaded.userId === userId ? loaded.rows : null;
 
@@ -169,6 +209,17 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
       (event) => event.source === "student" || !ids.has(event.id),
     );
   }, [studentEvents]);
+
+  // When a forming Rally's window closes, ask the database to mark it expired so
+  // every device gets the change. Every client already hides it at that moment.
+  const lifecycleNow = useLifecycleNow(studentEvents);
+  useEffect(() => {
+    if (!backend || !userId || lifecycleNow === 0) return;
+    const due = studentEvents.some(
+      (event) => event.rally?.status === "forming" && Date.parse(event.rally.expiresAt) <= lifecycleNow,
+    );
+    if (due) void backend.expireRallies();
+  }, [backend, userId, studentEvents, lifecycleNow]);
 
   const activity = useMemo(() => {
     const parsed = parseActivity(activityRaw);
@@ -247,6 +298,72 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     [backend, userId, storeRow],
   );
 
+  const [joined, setJoined] = useState<{ userId: string; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!backend || !userId) return;
+    let active = true;
+    void backend.myRallies().then((ids) => active && setJoined({ userId, ids: new Set(ids) }));
+    return () => {
+      active = false;
+    };
+  }, [backend, userId]);
+  const joinedRallies = useMemo(
+    () => (joined && joined.userId === userId ? joined.ids : new Set<string>()),
+    [joined, userId],
+  );
+
+  const joinRally = useCallback(
+    async (id: string) => {
+      if (!backend || !userId) return "You need to be signed in to join a Rally.";
+      try {
+        storeRow(await backend.joinRally(id));
+        setJoined((prev) => ({
+          userId,
+          ids: new Set([...(prev && prev.userId === userId ? prev.ids : []), id]),
+        }));
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : "Couldn't join the Rally. Please try again.";
+      }
+    },
+    [backend, userId, storeRow],
+  );
+
+  const adminEventAction = useCallback(
+    async (id: string, action: AdminAction, code: string) => {
+      if (!backend || !userId) return "You need to be signed in.";
+      const result = await requestAdminAction(id, action, code, mode === "supabase" ? getSupabase() : null);
+      if ("error" in result) return result.error;
+      try {
+        if (result.mode === "local" && backend.adminApply) {
+          const row = await backend.adminApply(id, action);
+          if (row) storeRow(row);
+        } else if (result.row) {
+          storeRow(result.row as EventRow);
+        }
+      } catch (error) {
+        return error instanceof Error ? error.message : "Couldn't apply the admin action.";
+      }
+      if (action === "delete") {
+        setLoaded((prev) =>
+          prev && prev.userId === userId ? { ...prev, rows: applyChange(prev.rows, { type: "delete", id }) } : prev,
+        );
+      }
+      return null;
+    },
+    [backend, userId, mode, storeRow],
+  );
+
+  const onNewRally = useCallback(
+    (listener: (event: CampusEvent) => void) => {
+      newRallyListeners.add(listener);
+      return () => {
+        newRallyListeners.delete(listener);
+      };
+    },
+    [newRallyListeners],
+  );
+
   const onRemoteDelete = useCallback(
     (listener: (id: string) => void) => {
       remoteDeleteListeners.add(listener);
@@ -288,7 +405,11 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
       deleteEvent,
       cancelEvent,
       pinMessage,
+      joinedRallies,
+      joinRally,
+      adminEventAction,
       onRemoteDelete,
+      onNewRally,
       going: onlyKnown(activity.going),
       toggleGoing,
       saved: onlyKnown(activity.saved),
@@ -309,7 +430,11 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     deleteEvent,
     cancelEvent,
     pinMessage,
+    joinedRallies,
+    joinRally,
+    adminEventAction,
     onRemoteDelete,
+    onNewRally,
     activity,
     toggleGoing,
     toggleSaved,

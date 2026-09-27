@@ -6,7 +6,7 @@ import { localAccountStore } from "./local-account";
 import { geoToMap, isOnMap } from "./geo";
 import { formatClock, humanizeMinutes, todayLabel } from "./utils";
 import { getCampusLocation } from "@/data/campus-locations";
-import type { CampusEvent, EventCategory, EventSource, EventStatus } from "@/types/event";
+import type { CampusEvent, EventCategory, EventKind, EventSource, EventStatus, RallyStatus } from "@/types/event";
 
 /** A row of `public.events` (see backend/supabase/migrations). */
 export interface EventRow {
@@ -34,6 +34,17 @@ export interface EventRow {
   status?: EventStatus | null;
   abandoned_at?: string | null;
   pinned_message_id?: string | null;
+  /** Absent until 20260927020000_rallies_organizations.sql runs; treated as a normal event. */
+  event_type?: EventKind | null;
+  rally_status?: RallyStatus | null;
+  rally_min_participants?: number | null;
+  rally_expires_at?: string | null;
+  rally_anonymous?: boolean | null;
+  rally_participant_count?: number | null;
+  rally_activated_at?: string | null;
+  organization_event?: boolean | null;
+  is_paid?: boolean | null;
+  price_display?: string | null;
 }
 
 /** What the client sends; the owner and source are never taken from here. */
@@ -49,12 +60,20 @@ export type NewEventRow = Omit<
   | "status"
   | "abandoned_at"
   | "pinned_message_id"
+  | "rally_status"
+  | "rally_participant_count"
+  | "rally_activated_at"
+  | "organization_event"
 > & {
   start_time: string;
   end_time: string;
 };
 
 export const STATUS_MIGRATION = "backend/supabase/migrations/20260927010000_event_status_and_chat.sql";
+export const RALLY_MIGRATION = "backend/supabase/migrations/20260927020000_rallies_organizations.sql";
+
+/** How long an active Rally stays on the map (the database uses the same hour). */
+const RALLY_ACTIVE_MS = 60 * 60 * 1000;
 
 export type EventChange = { type: "upsert"; row: EventRow } | { type: "delete"; id: string } | { type: "reload" };
 
@@ -68,6 +87,14 @@ export interface EventsBackend {
   cancel: (id: string) => Promise<EventRow>;
   /** Pins one of the organizer's own chat messages, or clears the pin with null. */
   setPinned: (id: string, messageId: string | null) => Promise<EventRow>;
+  /** Adds the signed-in user to a Rally. The database counts and activates it. */
+  joinRally: (id: string) => Promise<EventRow>;
+  /** Asks the database to mark Rallies whose window closed as expired. */
+  expireRallies: () => Promise<void>;
+  /** Rallies the signed-in user has joined (including ones they started). */
+  myRallies: () => Promise<string[]>;
+  /** Local preview only: the demo admin override after the server accepted the code. */
+  adminApply?: (id: string, action: "delete" | "cancel") => Promise<EventRow | null>;
   subscribe: (onChange: (change: EventChange) => void) => () => void;
 }
 
@@ -87,6 +114,9 @@ function describe(error: PostgrestError | { message: string; code?: string }, ac
   if (/can't be restored|can only be cancelled/i.test(message))
     return new Error("This event was already cancelled.");
   if (/can be pinned/i.test(message)) return new Error("Only your own messages in this event can be pinned.");
+  if (/rally_participants|event_type|rally_|organization_event|is_paid|price_display/.test(message) && /column|schema cache|does not exist/i.test(message))
+    return new Error(`Rallies and organization events need one more database update. Run ${RALLY_MIGRATION} first.`);
+  if (/Rally needs between|Rally window is/.test(message)) return new Error(message);
   if (error.code === "42703" || error.code === "PGRST204" || /column .* does not exist|could not find the '.*' column/i.test(message))
     return new Error("The events table is missing columns this app needs. Run backend/supabase/migrations/20260926221000_events_live_schema_compat_v2.sql first.");
   if (error.code === "23503")
@@ -168,6 +198,28 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
       if (!data || data.length === 0) throw new Error("Only the event's host can pin messages.");
       return data[0] as EventRow;
     },
+    async joinRally(id) {
+      // user_id defaults to auth.uid(); RLS only accepts your own row on an open Rally.
+      const { error } = await supabase.from("rally_participants").insert({ event_id: id });
+      if (error) {
+        if (error.code === "23505") throw new Error("You already joined this Rally.");
+        if (error.code === "42501" || /row-level security/i.test(error.message))
+          throw new Error("This Rally isn't taking new people anymore.");
+        throw describe(error, "join");
+      }
+      const { data, error: readError } = await supabase.from("events").select("*").eq("id", id).single();
+      if (readError) throw describe(readError, "load");
+      return data as EventRow;
+    },
+    async expireRallies() {
+      const { error } = await supabase.rpc("expire_rallies");
+      if (error) console.warn("Could not expire Rallies:", error.message);
+    },
+    async myRallies() {
+      const { data, error } = await supabase.from("rally_participants").select("event_id");
+      if (error) return [];
+      return (data ?? []).map((row: { event_id: string }) => row.event_id);
+    },
     subscribe(onChange) {
       const channel = supabase
         .channel("events")
@@ -189,6 +241,22 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
 
 const LOCAL_KEY = "campus-connect.local-events";
 const CHANNEL = "campus-connect.events";
+const LOCAL_RALLY_KEY = "campus-connect.local-rally-participants";
+
+interface LocalParticipant {
+  event_id: string;
+  user_id: string;
+  joined_at: string;
+}
+
+function readParticipants(): LocalParticipant[] {
+  try {
+    const rows = JSON.parse(window.localStorage.getItem(LOCAL_RALLY_KEY) ?? "[]");
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
 
 type StoredLocalRow = EventRow & { starts_at?: string; ends_at?: string; lat?: number; lng?: number };
 
@@ -227,6 +295,31 @@ export function createLocalEventsBackend(): EventsBackend {
   };
   const currentUserId = () => localAccountStore.getSnapshot()?.user.id ?? null;
 
+  /** Same rules as the database triggers: count, then switch on at the minimum. */
+  const syncRally = (rows: EventRow[], id: string): EventRow[] => {
+    const count = readParticipants().filter((p) => p.event_id === id).length;
+    return rows.map((row) => {
+      if (row.id !== id || row.event_type !== "rally") return row;
+      const now = Date.now();
+      const activates =
+        row.rally_status === "forming" &&
+        count >= (row.rally_min_participants ?? Infinity) &&
+        Date.parse(row.rally_expires_at ?? "") > now;
+      return {
+        ...row,
+        rally_participant_count: count,
+        ...(activates
+          ? {
+              rally_status: "active" as const,
+              rally_activated_at: new Date(now).toISOString(),
+              start_time: new Date(now).toISOString(),
+              end_time: new Date(now + RALLY_ACTIVE_MS).toISOString(),
+            }
+          : {}),
+      };
+    });
+  };
+
   return {
     async list() {
       return readLocal();
@@ -236,15 +329,42 @@ export function createLocalEventsBackend(): EventsBackend {
       if (!owner) throw new Error("You need to be signed in to post an event.");
       // No Storage in local preview: keep a small copy of the photo on the row.
       const image_url = photo ? await blobToDataUrl(await preparePhoto(photo, 720, 0.78)) : null;
-      const stored: EventRow = {
+      const isOrg = Boolean(localAccountStore.getSnapshot()?.profile.is_org);
+      const now = new Date();
+      const rally = row.event_type === "rally";
+      const paid = isOrg && !rally && Boolean(row.is_paid) && Boolean(row.price_display);
+      let stored: EventRow = {
         ...row,
         image_url,
         id: crypto.randomUUID(),
         created_by: owner,
         source: "student",
-        created_at: new Date().toISOString(),
+        created_at: now.toISOString(),
+        event_type: rally ? "rally" : "event",
+        organization_event: isOrg,
+        is_paid: paid,
+        price_display: paid ? row.price_display : null,
+        ...(rally
+          ? {
+              rally_status: "forming" as const,
+              rally_participant_count: 0,
+              rally_activated_at: null,
+              start_time: now.toISOString(),
+              end_time: row.rally_expires_at ?? row.end_time,
+              host_name: row.rally_anonymous ? "Anonymous student" : row.host_name,
+            }
+          : { rally_status: null, rally_min_participants: null, rally_expires_at: null, rally_anonymous: false }),
       };
-      write([...readLocal(), stored], { type: "upsert", row: stored });
+      let rows = [...readLocal(), stored];
+      if (rally) {
+        window.localStorage.setItem(
+          LOCAL_RALLY_KEY,
+          JSON.stringify([...readParticipants(), { event_id: stored.id, user_id: owner, joined_at: now.toISOString() }]),
+        );
+        rows = syncRally(rows, stored.id);
+        stored = rows.find((r) => r.id === stored.id) ?? stored;
+      }
+      write(rows, { type: "upsert", row: stored });
       return stored;
     },
     async remove(id) {
@@ -275,6 +395,66 @@ export function createLocalEventsBackend(): EventsBackend {
       const target = rows.find((row) => row.id === id);
       if (!target || target.created_by !== currentUserId()) throw new Error("Only the event's host can pin messages.");
       const next: EventRow = { ...target, pinned_message_id: messageId };
+      write(
+        rows.map((row) => (row.id === id ? next : row)),
+        { type: "upsert", row: next },
+      );
+      return next;
+    },
+    async joinRally(id) {
+      const userId = currentUserId();
+      if (!userId) throw new Error("You need to be signed in to join a Rally.");
+      const rows = readLocal();
+      const target = rows.find((row) => row.id === id);
+      const now = Date.now();
+      const open =
+        target?.event_type === "rally" &&
+        (target.status ?? "active") === "active" &&
+        ((target.rally_status === "forming" && Date.parse(target.rally_expires_at ?? "") > now) ||
+          (target.rally_status === "active" && Date.parse(target.end_time ?? "") > now));
+      if (!open) throw new Error("This Rally isn't taking new people anymore.");
+      const participants = readParticipants();
+      if (participants.some((p) => p.event_id === id && p.user_id === userId))
+        throw new Error("You already joined this Rally.");
+      window.localStorage.setItem(
+        LOCAL_RALLY_KEY,
+        JSON.stringify([...participants, { event_id: id, user_id: userId, joined_at: new Date(now).toISOString() }]),
+      );
+      const next = syncRally(rows, id);
+      const row = next.find((r) => r.id === id)!;
+      write(next, { type: "upsert", row });
+      return row;
+    },
+    async expireRallies() {
+      const now = Date.now();
+      const rows = readLocal();
+      const expired = rows.filter(
+        (row) => row.event_type === "rally" && row.rally_status === "forming" && Date.parse(row.rally_expires_at ?? "") <= now,
+      );
+      if (expired.length === 0) return;
+      const ids = new Set(expired.map((row) => row.id));
+      const next = rows.map((row) => (ids.has(row.id) ? { ...row, rally_status: "expired" as const } : row));
+      window.localStorage.setItem(LOCAL_KEY, JSON.stringify(next));
+      next.filter((row) => ids.has(row.id)).forEach((row) => channel?.postMessage({ type: "upsert", row } satisfies EventChange));
+    },
+    async myRallies() {
+      const userId = currentUserId();
+      return readParticipants()
+        .filter((p) => p.user_id === userId)
+        .map((p) => p.event_id);
+    },
+    async adminApply(id, action) {
+      const rows = readLocal();
+      const target = rows.find((row) => row.id === id);
+      if (!target) throw new Error("Official listings aren't stored in the database, so they can't be changed here.");
+      if (action === "delete") {
+        write(
+          rows.filter((row) => row.id !== id),
+          { type: "delete", id },
+        );
+        return null;
+      }
+      const next: EventRow = { ...target, status: "abandoned", abandoned_at: new Date().toISOString() };
       write(
         rows.map((row) => (row.id === id ? next : row)),
         { type: "upsert", row: next },
@@ -364,7 +544,7 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     ...scheduleFor(row, now),
     goingCount: 0,
     interestedCount: 0,
-    host: row.host_name || "A Columbia student",
+    host: row.event_type === "rally" && row.rally_anonymous ? "Anonymous student" : row.host_name || "A Columbia student",
     markerColor: style.markerColor,
     iconType: style.iconType,
     source: row.source,
@@ -376,5 +556,20 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     status: row.status === "abandoned" ? "abandoned" : "active",
     abandonedAt: row.abandoned_at ?? null,
     pinnedMessageId: row.pinned_message_id ?? null,
+    kind: row.event_type === "rally" ? "rally" : "event",
+    rally:
+      row.event_type === "rally" && row.rally_status && row.rally_expires_at
+        ? {
+            status: row.rally_status,
+            minParticipants: row.rally_min_participants ?? 2,
+            expiresAt: row.rally_expires_at,
+            anonymous: Boolean(row.rally_anonymous),
+            participantCount: row.rally_participant_count ?? 0,
+            activatedAt: row.rally_activated_at ?? null,
+          }
+        : null,
+    organizationEvent: Boolean(row.organization_event),
+    isPaid: Boolean(row.is_paid && row.price_display),
+    priceDisplay: row.is_paid ? (row.price_display ?? null) : null,
   };
 }

@@ -7,6 +7,8 @@ export interface Profile {
   website: string | null;
   university: string | null;
   avatar_url: string | null;
+  /** Organization account; only the server can turn it on. */
+  is_org?: boolean;
 }
 
 /** The signed-in auth user, reduced to what the UI needs. */

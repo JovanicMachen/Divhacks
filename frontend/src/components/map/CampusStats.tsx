@@ -32,7 +32,7 @@ export function CampusStats({ happeningNow, freeFood }: { happeningNow: number; 
     { value: freeFood, label: freeFood === 1 ? "free food event" : "free food events", icon: PizzaSliceIcon, iconClass: "" },
   ];
   return (
-    <div className="pointer-events-none absolute bottom-5 left-1/2 z-10 w-[84%] max-w-[760px] -translate-x-1/2">
+    <div className="pointer-events-none absolute bottom-5 left-1/2 z-10 hidden w-[84%] max-w-[760px] -translate-x-1/2 tablet:block">
       <dl className="pointer-events-auto flex h-[83px] items-stretch overflow-hidden rounded-[20px] bg-panel shadow-float">
         {stats.map((stat, index) => {
           const Icon = stat.icon;

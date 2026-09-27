@@ -2,12 +2,13 @@
 
 import type { ComponentType } from "react";
 import { AnimatePresence, motion, useReducedMotion, type MotionValue } from "framer-motion";
-import { BookOpen, BriefcaseBusiness, GraduationCap, Music, Users } from "lucide-react";
+import { BookOpen, BriefcaseBusiness, Building2, GraduationCap, Music, Users } from "lucide-react";
 
 import { countdownTone } from "@/components/events/CountdownChip";
 import { PizzaSliceIcon, RunnerIcon } from "@/components/icons/CategoryIcons";
 import { MARKER_PALETTE } from "@/lib/constants";
 import { useEventCountdown, type EventCountdown } from "@/lib/event-clock";
+import { formatRallyClock, ORG_PURPLE, RALLY_BLUE, RALLY_NAVY, useRallyRemaining } from "@/lib/rally";
 import { cn } from "@/lib/utils";
 import type { MapPoint } from "@/lib/geo";
 import type { CampusEvent, MarkerIcon } from "@/types/event";
@@ -177,11 +178,124 @@ function MarkerCountdown({ countdown }: { countdown: EventCountdown }) {
   );
 }
 
+/** Rallies get their own broadcast-style marker; everything else keeps the pin. */
+export function EventMarker(props: EventMarkerProps) {
+  return props.event.rally ? <RallyMarker {...props} /> : <StandardMarker {...props} />;
+}
+
+/** Small purple mark for organization events, on top of the category colour. */
+function OrgBadge({ left, top }: { left: number; top: number }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute z-[1] grid h-[16px] w-[16px] place-items-center rounded-full text-white ring-2 ring-white"
+      style={{ left, top, backgroundColor: ORG_PURPLE.solid }}
+    >
+      <Building2 size={9} strokeWidth={2.6} />
+    </span>
+  );
+}
+
+/**
+ * A Rally centred on its spot: dark core, a dashed ring that turns while it's
+ * forming, radar pulses, and a RALLY label with the time left. Once enough
+ * people join it switches to a solid glowing ring and RALLY ON.
+ */
+function RallyMarker({ event, point, selected, onSelect, inverseScale, interactive = true }: EventMarkerProps) {
+  const rally = event.rally!;
+  const remaining = useRallyRemaining(rally);
+  const reduceMotion = useReducedMotion();
+  const on = rally.status === "active";
+  const size = selected ? 50 : 44;
+  const Icon = MARKER_ICONS[event.iconType];
+  const status = on
+    ? `Rally on, ${rally.participantCount} joined`
+    : `Rally forming, ${rally.participantCount} of ${rally.minParticipants} joined${remaining !== null ? `, ${formatRallyClock(remaining)} left` : ""}`;
+
+  return (
+    <MapAnchor x={point.x} y={point.y} inverseScale={inverseScale} className={selected ? "z-[4]" : "z-[3]"}>
+      <motion.div
+        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.4 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.3 }}
+        transition={{ duration: 0.45, ease: [0.32, 0.72, 0, 1] }}
+        className="absolute"
+        style={{ left: -size / 2, top: -size / 2, width: size, height: size }}
+      >
+        <span aria-hidden className="pointer-events-none absolute inset-0">
+          <span
+            className={cn("absolute inset-0 rounded-full border-2 opacity-30", on ? "cc-radar-strong" : "cc-radar")}
+            style={{ borderColor: RALLY_BLUE }}
+          />
+          <span
+            className={cn("cc-radar-delay absolute inset-0 rounded-full border-2 opacity-0", on ? "cc-radar-strong" : "cc-radar")}
+            style={{ borderColor: RALLY_BLUE }}
+          />
+        </span>
+        <svg
+          aria-hidden
+          viewBox="0 0 64 64"
+          className={cn("pointer-events-none absolute", !on && "cc-spin-slow")}
+          style={{ left: -10, top: -10, width: size + 20, height: size + 20 }}
+        >
+          <circle
+            cx="32"
+            cy="32"
+            r="30"
+            fill="none"
+            stroke={RALLY_BLUE}
+            strokeWidth={on ? 3 : 2}
+            strokeDasharray={on ? undefined : "5 6"}
+            strokeLinecap="round"
+            opacity={on ? 0.9 : 0.75}
+          />
+        </svg>
+        <motion.button
+          key={on ? "on" : "forming"}
+          type="button"
+          onClick={() => onSelect(event.id)}
+          aria-label={`${event.title} at ${event.locationName}, ${status}`}
+          aria-pressed={selected}
+          tabIndex={interactive ? 0 : -1}
+          initial={on && !reduceMotion ? { scale: 0.7 } : false}
+          animate={{ scale: 1 }}
+          whileHover={interactive ? { scale: 1.06 } : undefined}
+          whileTap={interactive ? { scale: 0.96 } : undefined}
+          transition={on ? { type: "spring", stiffness: 420, damping: 14 } : { duration: 0.16 }}
+          className={cn(
+            "relative grid h-full w-full place-items-center rounded-full text-white ring-[3px] ring-white",
+            interactive ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          style={{
+            background: on ? `linear-gradient(140deg, ${RALLY_BLUE} 0%, ${RALLY_NAVY} 100%)` : RALLY_NAVY,
+            boxShadow: on
+              ? "0 0 0 5px rgb(23 102 232 / 0.22), 0 8px 18px rgb(15 37 71 / 0.35)"
+              : "0 4px 12px rgb(15 37 71 / 0.3)",
+          }}
+        >
+          <Icon size={selected ? 21 : 19} strokeWidth={2.3} />
+        </motion.button>
+        <span aria-hidden className="pointer-events-none absolute left-1/2 top-[calc(100%+12px)] -translate-x-1/2">
+          <span
+            className="flex flex-col items-center whitespace-nowrap rounded-[9px] px-[8px] py-[4px] leading-none text-white shadow-[0_2px_6px_rgba(15,37,71,0.28)] transition-colors duration-500"
+            style={{ backgroundColor: on ? RALLY_BLUE : RALLY_NAVY }}
+          >
+            <span className="text-[9px] font-extrabold tracking-[0.14em]">{on ? "RALLY ON" : "RALLY"}</span>
+            <span className="mt-[3px] text-[11.5px] font-bold tabular-nums">
+              {on ? `${rally.participantCount} joined` : remaining !== null ? formatRallyClock(remaining) : ""}
+            </span>
+          </span>
+        </span>
+      </motion.div>
+    </MapAnchor>
+  );
+}
+
 /**
  * A single teardrop pin anchored by its tip to the event's map position.
  * Only the selected marker carries the soft outer glow.
  */
-export function EventMarker({
+function StandardMarker({
   event,
   point,
   selected,
@@ -282,6 +396,7 @@ export function EventMarker({
           <MarkerPin markerColor={event.markerColor} iconType={event.iconType} selected={selected} />
         )}
       </motion.button>
+      {event.organizationEvent && <OrgBadge left={width - (photo ? 14 : 11)} top={photo ? -2 : -3} />}
       {countdown && countdown.phase !== "ended" && <MarkerCountdown countdown={countdown} />}
     </motion.div>
     </div>

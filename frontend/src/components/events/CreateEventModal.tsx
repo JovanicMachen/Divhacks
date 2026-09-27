@@ -2,14 +2,30 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, Check, ChevronDown, ImagePlus, Info, Loader2, MapPin, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Building2,
+  Check,
+  ChevronDown,
+  ImagePlus,
+  Info,
+  Loader2,
+  MapPin,
+  Minus,
+  Plus,
+  Radar,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import { CAMPUS_LOCATIONS, getCampusLocation } from "@/data/campus-locations";
 import { CATEGORY_STYLE, EVENT_CATEGORIES, MARKER_PALETTE } from "@/lib/constants";
 import { PHOTO_TYPES, photoError } from "@/lib/event-photos";
 import { cn, isTimeRangeValid } from "@/lib/utils";
-import type { EventDraft } from "@/types/event";
+import { ORG_PURPLE, RALLY_NAVY } from "@/lib/rally";
+import { RALLY_LIMITS, type EventDraft } from "@/types/event";
 
 interface CreateEventModalProps {
   open: boolean;
@@ -23,11 +39,13 @@ interface CreateEventModalProps {
   submitError?: string | null;
   /** Local preview mode: events are saved in this browser only. */
   localPreview?: boolean;
+  /** Organization accounts can mark an event as paid (informational only). */
+  isOrg?: boolean;
 }
 
 const LOCATION_OPTIONS = [...CAMPUS_LOCATIONS].sort((a, b) => a.name.localeCompare(b.name));
 
-type Field = "title" | "point" | "time";
+type Field = "title" | "point" | "time" | "price";
 
 const INPUT =
   "w-full rounded-[12px] border border-line bg-field px-3.5 text-[14.5px] font-medium text-ink placeholder:font-normal placeholder:text-faint outline-none transition-[background-color,border-color,box-shadow] duration-150 focus:border-brand/40 focus:bg-white focus:ring-4 focus:ring-brand/10";
@@ -37,8 +55,92 @@ function validate(draft: EventDraft): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (!draft.title.trim()) errors.title = "Give your event a title.";
   if (!draft.point) errors.point = "Pick a campus location or choose a spot on the map.";
+  if (draft.kind === "rally") return errors;
   if (!isTimeRangeValid(draft.startTime, draft.endTime)) errors.time = "End time must be after the start time.";
+  if (draft.isPaid && !draft.priceDisplay.trim()) errors.price = "Add a price, like $10.";
   return errors;
+}
+
+const clampInt = (value: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(value)));
+
+/** − value + control with 44px targets. */
+function Stepper({
+  id,
+  label,
+  value,
+  min,
+  max,
+  unit,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  unit: string;
+  onChange: (value: number) => void;
+}) {
+  const button =
+    "grid h-11 w-11 shrink-0 place-items-center rounded-[12px] bg-field text-ink-soft transition-colors hover:bg-[#e6eaf2] disabled:cursor-not-allowed disabled:opacity-40";
+  return (
+    <div>
+      <span id={`${id}-label`} className={LABEL}>
+        {label}
+      </span>
+      <div role="group" aria-labelledby={`${id}-label`} className="flex items-center gap-2">
+        <button type="button" aria-label={`Fewer ${unit}`} disabled={value <= min} onClick={() => onChange(value - 1)} className={button}>
+          <Minus size={17} strokeWidth={2.6} />
+        </button>
+        <output aria-live="polite" className="min-w-0 flex-1 text-center text-[16px] font-extrabold tabular-nums text-ink">
+          {value} <span className="text-[13px] font-semibold text-muted">{unit}</span>
+        </output>
+        <button type="button" aria-label={`More ${unit}`} disabled={value >= max} onClick={() => onChange(value + 1)} className={button}>
+          <Plus size={17} strokeWidth={2.6} />
+        </button>
+      </div>
+      <p className="mt-[5px] text-center text-[11.5px] font-semibold text-faint">
+        {min}–{max} {unit}
+      </p>
+    </div>
+  );
+}
+
+/** Accessible on/off switch. */
+function Toggle({
+  id,
+  checked,
+  onChange,
+  label,
+  hint,
+  accent,
+}: {
+  id: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint: string;
+  accent: string;
+}) {
+  return (
+    <label htmlFor={id} className="flex cursor-pointer items-start gap-3 rounded-[14px] border border-line bg-panel px-3.5 py-3">
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14.5px] font-bold text-ink">{label}</span>
+        <span className="mt-[2px] block text-[12.5px] font-medium leading-[1.4] text-muted">{hint}</span>
+      </span>
+      <input id={id} type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+      <span
+        aria-hidden
+        className="relative mt-[2px] h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-200 peer-focus-visible:ring-4 peer-focus-visible:ring-brand/20"
+        style={{ backgroundColor: checked ? accent : "#D5DBE6" }}
+      >
+        <span
+          className="absolute top-[3px] h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+          style={{ transform: `translateX(${checked ? 21 : 3}px)` }}
+        />
+      </span>
+    </label>
+  );
 }
 
 /** Optional cover photo: pick, preview, replace, or remove before posting. */
@@ -149,7 +251,9 @@ export function CreateEventModal({
   submitting = false,
   submitError = null,
   localPreview = false,
+  isOrg = false,
 }: CreateEventModalProps) {
+  const rally = draft.kind === "rally";
   const titleId = useId();
   const [showErrors, setShowErrors] = useState(false);
   const errors = validate(draft);
@@ -207,10 +311,12 @@ export function CreateEventModal({
             <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-6 tablet:px-7">
               <div>
                 <h2 id={titleId} className="text-[22px] font-extrabold tracking-[-0.02em] text-ink">
-                  Post an event
+                  {rally ? "Start a Rally" : "Post an event"}
                 </h2>
                 <p className="mt-[3px] text-[14px] font-medium text-muted">
-                  Share what&apos;s happening on campus right now.
+                  {rally
+                    ? "Happens only if enough students join before the timer runs out."
+                    : "Share what's happening on campus right now."}
                 </p>
               </div>
               <button
@@ -224,25 +330,58 @@ export function CreateEventModal({
             </div>
 
             <div className="min-h-0 flex-1 space-y-[18px] overflow-y-auto px-6 pb-2 tablet:px-7 scrollbar-none">
+              <div role="radiogroup" aria-label="What are you posting?" className="grid grid-cols-2 gap-1 rounded-[14px] bg-field p-1">
+                {(["event", "rally"] as const).map((kind) => {
+                  const selected = draft.kind === kind;
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => set("kind", kind)}
+                      className={cn(
+                        "relative flex h-11 items-center justify-center gap-2 rounded-[11px] text-[14.5px] font-bold transition-colors",
+                        selected ? (kind === "rally" ? "text-white" : "text-brand") : "text-muted hover:text-ink",
+                      )}
+                    >
+                      {selected && (
+                        <motion.span
+                          layoutId="post-kind"
+                          transition={{ type: "spring", stiffness: 500, damping: 36 }}
+                          className="absolute inset-0 rounded-[11px] shadow-pill"
+                          style={{ backgroundColor: kind === "rally" ? RALLY_NAVY : "#ffffff" }}
+                        />
+                      )}
+                      <span className="relative flex items-center gap-2">
+                        {kind === "rally" ? <Radar size={16} strokeWidth={2.4} aria-hidden /> : <Plus size={16} strokeWidth={2.6} aria-hidden />}
+                        {kind === "rally" ? "Rally" : "Normal Event"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
               <div>
                 <label htmlFor="ev-title" className={LABEL}>
-                  Title
+                  {rally ? "What's the Rally?" : "Title"}
                 </label>
                 <input
                   id="ev-title"
                   autoFocus
                   value={draft.title}
                   onChange={(e) => set("title", e.target.value)}
-                  placeholder="e.g. Free bagels outside Butler"
-                  maxLength={80}
+                  placeholder={rally ? "e.g. Pickup basketball, need a few more" : "e.g. Free bagels outside Butler"}
+                  maxLength={rally ? 60 : 80}
                   aria-invalid={showErrors && Boolean(errors.title)}
                   className={cn(INPUT, "h-11")}
                 />
                 {error("title")}
               </div>
 
-              <PhotoField photo={draft.photo} onChange={(photo) => set("photo", photo)} />
+              {!rally && <PhotoField photo={draft.photo} onChange={(photo) => set("photo", photo)} />}
 
+              {!rally && (
               <div>
                 <label htmlFor="ev-desc" className={LABEL}>
                   Description
@@ -257,6 +396,7 @@ export function CreateEventModal({
                   className={cn(INPUT, "resize-none py-2.5 leading-[1.4]")}
                 />
               </div>
+              )}
 
               <fieldset>
                 <legend className={LABEL}>Category</legend>
@@ -356,6 +496,42 @@ export function CreateEventModal({
                 {error("point")}
               </div>
 
+              {rally ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Stepper
+                      id="ev-rally-min"
+                      label="Minimum people"
+                      value={draft.rallyMinParticipants}
+                      min={RALLY_LIMITS.minParticipants.min}
+                      max={RALLY_LIMITS.minParticipants.max}
+                      unit="people"
+                      onChange={(v) =>
+                        set("rallyMinParticipants", clampInt(v, RALLY_LIMITS.minParticipants.min, RALLY_LIMITS.minParticipants.max))
+                      }
+                    />
+                    <Stepper
+                      id="ev-rally-window"
+                      label="Rally window"
+                      value={draft.rallyWindowMinutes}
+                      min={RALLY_LIMITS.windowMinutes.min}
+                      max={RALLY_LIMITS.windowMinutes.max}
+                      unit="min"
+                      onChange={(v) =>
+                        set("rallyWindowMinutes", clampInt(v, RALLY_LIMITS.windowMinutes.min, RALLY_LIMITS.windowMinutes.max))
+                      }
+                    />
+                  </div>
+                  <Toggle
+                    id="ev-rally-anon"
+                    checked={draft.rallyAnonymous}
+                    onChange={(v) => set("rallyAnonymous", v)}
+                    label="Rally anonymously"
+                    hint="Other students see “Anonymous student”. Your account still owns the Rally, so you can cancel it."
+                    accent={RALLY_NAVY}
+                  />
+                </>
+              ) : (
               <div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -386,14 +562,50 @@ export function CreateEventModal({
                 </div>
                 {error("time")}
               </div>
+              )}
+
+              {!rally && isOrg && (
+                <div className="space-y-2">
+                  <Toggle
+                    id="ev-paid"
+                    checked={draft.isPaid}
+                    onChange={(v) => set("isPaid", v)}
+                    label="Paid Event"
+                    hint="Shows a price on your Organization Event. Campus Connect doesn't take or track payments."
+                    accent={ORG_PURPLE.solid}
+                  />
+                  {draft.isPaid && (
+                    <div>
+                      <label htmlFor="ev-price" className={LABEL}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Building2 size={13} strokeWidth={2.4} aria-hidden style={{ color: ORG_PURPLE.solid }} />
+                          Price shown to students
+                        </span>
+                      </label>
+                      <input
+                        id="ev-price"
+                        value={draft.priceDisplay}
+                        onChange={(e) => set("priceDisplay", e.target.value)}
+                        placeholder="$10"
+                        maxLength={24}
+                        aria-invalid={showErrors && Boolean(errors.price)}
+                        className={cn(INPUT, "h-11")}
+                      />
+                      {error("price")}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="px-6 pb-6 pt-4 tablet:px-7">
               <p className="flex items-start gap-[7px] rounded-[11px] bg-[#F3F6FB] px-[11px] py-[9px] text-[12.5px] font-medium leading-[1.4] text-muted">
                 <Info size={14} strokeWidth={2.3} aria-hidden className="mt-[1px] shrink-0 text-faint" />
-                {localPreview
-                  ? "Local preview: Supabase isn't connected, so posted events are saved in this browser only. You can delete your own events any time."
-                  : "Your event is saved to Campus Connect and shown to everyone signed in. You can delete it any time."}
+                {rally
+                  ? `If fewer than ${draft.rallyMinParticipants} students join in ${draft.rallyWindowMinutes} minutes, the Rally expires and leaves the map.`
+                  : localPreview
+                    ? "Local preview: Supabase isn't connected, so posted events are saved in this browser only. You can delete your own events any time."
+                    : "Your event is saved to Campus Connect and shown to everyone signed in. You can delete it any time."}
               </p>
               {submitError && (
                 <p
@@ -421,7 +633,7 @@ export function CreateEventModal({
                   className="flex h-11 items-center gap-2 rounded-[12px] bg-brand px-6 text-[15px] font-bold text-white shadow-[0_4px_12px_rgb(23_102_232_/_0.26)] transition-colors hover:bg-brand-dark active:bg-brand-press disabled:cursor-wait disabled:opacity-80"
                 >
                   {submitting && <Loader2 size={16} strokeWidth={2.6} aria-hidden className="animate-spin" />}
-                  {submitting ? "Posting…" : "Post Event"}
+                  {submitting ? (rally ? "Starting…" : "Posting…") : rally ? "Start Rally" : "Post Event"}
                 </motion.button>
               </div>
             </div>

@@ -57,5 +57,10 @@ export function normalizeOfficialEvent(raw: RawOfficialEvent): CampusEvent {
     source: "official",
     createdBy: null,
     status: "active",
+    kind: "event",
+    rally: null,
+    organizationEvent: false,
+    isPaid: false,
+    priceDisplay: null,
   };
 }

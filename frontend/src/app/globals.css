@@ -149,11 +149,66 @@ body {
   animation: cc-live-dot 2.4s ease-in-out infinite;
 }
 
+/* Rally: a broadcast signal while forming, a steadier glow once it's on. */
+@keyframes cc-radar {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.3);
+    opacity: 0;
+  }
+}
+
+@keyframes cc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cc-radar {
+  animation: cc-radar 2.6s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+}
+
+.cc-radar-delay {
+  animation-delay: 1.3s;
+}
+
+.cc-radar-strong {
+  animation: cc-radar 1.7s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+}
+
+.cc-spin-slow {
+  animation: cc-spin 9s linear infinite;
+}
+
+/* Horizontal chip rows on phones: native touch scrolling with gentle snapping. */
+.cc-chip-row {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.cc-chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.cc-chip-row > * > * {
+  scroll-snap-align: start;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cc-breathe,
   .cc-breathe-strong,
   .cc-heartbeat,
-  .cc-live-dot {
+  .cc-live-dot,
+  .cc-radar,
+  .cc-radar-strong,
+  .cc-spin-slow {
     animation: none;
   }
 }

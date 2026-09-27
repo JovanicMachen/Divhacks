@@ -39,11 +39,12 @@ export function MapControls({ onZoomIn, onZoomOut, onLocate, locating, located }
         />
       </motion.button>
 
-      <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-pill">
+      {/* Phones: two separate 44px buttons with a gap. Tablet and up: the joined control. */}
+      <div className="flex flex-col gap-[12px] tablet:gap-0 tablet:overflow-hidden tablet:rounded-xl tablet:border tablet:border-line tablet:bg-panel tablet:shadow-pill">
         <ZoomButton label="Zoom in" onClick={onZoomIn}>
           <Plus size={18} strokeWidth={2.4} />
         </ZoomButton>
-        <span aria-hidden className="mx-auto block h-px w-[26px] bg-line" />
+        <span aria-hidden className="mx-auto hidden h-px w-[26px] bg-line tablet:block" />
         <ZoomButton label="Zoom out" onClick={onZoomOut}>
           <Minus size={18} strokeWidth={2.4} />
         </ZoomButton>
@@ -66,7 +67,7 @@ function ZoomButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="grid h-[34px] w-[46px] place-items-center text-[#3C4C6B] transition-colors duration-150 hover:bg-brand-tint hover:text-brand active:bg-brand-soft"
+      className="grid h-[44px] w-[46px] place-items-center rounded-xl border border-line bg-panel text-[#3C4C6B] shadow-pill transition-colors duration-150 hover:bg-brand-tint hover:text-brand active:bg-brand-soft tablet:h-[34px] tablet:rounded-none tablet:border-0 tablet:bg-transparent tablet:shadow-none"
     >
       {children}
     </button>

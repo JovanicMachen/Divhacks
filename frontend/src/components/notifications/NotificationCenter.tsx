@@ -13,6 +13,8 @@ import {
   Check,
   CheckCheck,
   Megaphone,
+  Radar,
+  TimerOff,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,6 +30,8 @@ import type { CampusEvent, EventCategory } from "@/types/event";
 
 const TYPE_ICON: Record<string, LucideIcon> = {
   event_cancelled: CalendarX2,
+  rally_on: Radar,
+  rally_expired: TimerOff,
   going_starting_now: BellRing,
   going_starts_soon: CalendarClock,
   saved_starts_soon: Bookmark,
@@ -35,6 +39,9 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   new_event: CalendarPlus,
   official_added: Megaphone,
 };
+
+/** Types whose body text is the message itself, not "title · place". */
+const BODY_TYPES = new Set(["event_cancelled", "rally_on", "rally_expired"]);
 
 interface NotificationCenterProps {
   /** Selects the event, focuses its marker, and opens the event drawer. */
@@ -270,7 +277,7 @@ function NotificationItem({ row, event, now, onOpen, onMarkRead }: ItemProps) {
           <span className={cn("block text-[14px] leading-[1.3] text-ink", unread ? "font-bold" : "font-semibold text-ink-soft")}>
             {row.title}
           </span>
-          {row.type === "event_cancelled" && row.body ? (
+          {BODY_TYPES.has(row.type) && row.body ? (
             <span className="mt-[2px] block text-[13px] font-semibold leading-[1.35] text-ink-soft">{row.body}</span>
           ) : (
             event && <span className="mt-[2px] block truncate text-[13px] font-semibold text-ink-soft">{event.title}</span>

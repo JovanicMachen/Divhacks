@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Bookmark,
   CalendarDays,
+  Building2,
   CalendarX2,
   Check,
   ChevronRight,
@@ -13,6 +14,8 @@ import {
   MapPin,
   Navigation,
   PersonStanding,
+  Radar,
+  ShieldAlert,
   Share2,
   Star,
   Trash2,
@@ -23,6 +26,7 @@ import { AvatarStack } from "./AvatarStack";
 import { CategoryHeroArt } from "./CategoryHeroArt";
 import { CountdownChip } from "./CountdownChip";
 import { EventChat } from "./EventChat";
+import { RallyPanel } from "@/components/rally/RallyPanel";
 import { useAccount } from "@/components/account/AccountProvider";
 import { EventHeroArt } from "./EventHeroArt";
 import { CategoryGlyph, PeopleIcon } from "@/components/icons/CategoryIcons";
@@ -30,6 +34,7 @@ import { MARKER_PALETTE } from "@/lib/constants";
 import { directionsUrl } from "@/lib/directions";
 import { useEventChat } from "@/lib/event-chat";
 import { isCancelled, useEventCountdown } from "@/lib/event-clock";
+import { ORG_PURPLE } from "@/lib/rally";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useUserEvents } from "@/lib/user-events";
 import { cn, formatCount } from "@/lib/utils";
@@ -49,6 +54,8 @@ interface EventDrawerProps {
   onDelete?: () => void;
   /** Only passed for the signed-in user's own student events that are still active. */
   onCancelEvent?: () => void;
+  /** Temporary demo admin override, offered to every signed-in user. */
+  onAdminAction?: () => void;
 }
 
 type DrawerTab = "details" | "chat";
@@ -130,13 +137,14 @@ function DrawerCard({
   onShare,
   onDelete,
   onCancelEvent,
+  onAdminAction,
 }: EventDrawerProps) {
   const palette = MARKER_PALETTE[event.markerColor];
   const goingCount = event.goingCount + (isGoing ? 1 : 0);
   const countdown = useEventCountdown(event);
   const cancelled = isCancelled(event);
   const { mode, user } = useAccount();
-  const { pinMessage } = useUserEvents();
+  const { pinMessage, joinedRallies, joinRally } = useUserEvents();
   const userId = user?.id ?? null;
 
   // Tab and unread count belong to one event; switching events starts on Details.
@@ -206,7 +214,9 @@ function DrawerCard({
             <button type="button" onClick={onShare} aria-label="Share event" className={HERO_BUTTON}>
               <Share2 size={15} strokeWidth={2.4} />
             </button>
-            {onDelete && <ManageMenu key={event.id} onDelete={onDelete} onCancelEvent={onCancelEvent} />}
+            {(onDelete || onAdminAction) && (
+              <ManageMenu key={event.id} onDelete={onDelete} onCancelEvent={onCancelEvent} onAdminAction={onAdminAction} />
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -286,6 +296,38 @@ function DrawerCard({
           </span>
         )}
 
+        {(event.organizationEvent || event.rally) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {event.rally && (
+              <span
+                className="inline-flex h-[24px] items-center gap-[5px] rounded-full px-[9px] text-[12px] font-extrabold uppercase tracking-[0.1em] text-white"
+                style={{ backgroundColor: "#0f2547" }}
+              >
+                <Radar size={13} strokeWidth={2.5} aria-hidden />
+                Rally{event.rally.anonymous ? " · anonymous" : ""}
+              </span>
+            )}
+            {event.organizationEvent && (
+              <span
+                className="inline-flex h-[24px] items-center gap-[5px] rounded-full px-[9px] text-[12.5px] font-bold"
+                style={{ backgroundColor: ORG_PURPLE.soft, color: ORG_PURPLE.text }}
+              >
+                <Building2 size={13} strokeWidth={2.4} aria-hidden />
+                Organization Event
+              </span>
+            )}
+            {event.isPaid && event.priceDisplay && (
+              <span
+                className="inline-flex h-[24px] items-center rounded-full border px-[9px] text-[12.5px] font-bold"
+                style={{ borderColor: ORG_PURPLE.solid, color: ORG_PURPLE.text }}
+                title="Price set by the organization. Campus Connect doesn't take payments."
+              >
+                {event.priceDisplay}
+              </span>
+            )}
+          </div>
+        )}
+
         <h1 className="mt-[9px] text-[32px] font-extrabold leading-[1.08] tracking-[-0.025em] text-ink">
           {event.title}
         </h1>
@@ -324,6 +366,10 @@ function DrawerCard({
           <Emphasized text={event.description} emphasis={event.emphasis} />
         </p>
 
+        {event.rally ? (
+          <RallyPanel event={event} joined={joinedRallies.has(event.id)} onJoin={() => joinRally(event.id)} />
+        ) : (
+        <>
         <div className="mt-[16px] flex items-start">
           <div className="min-w-0 flex-1 pr-3">
             <div className="flex items-center gap-[9px]">
@@ -385,6 +431,8 @@ function DrawerCard({
           {isGoing ? "You're Going" : "I'm Going"}
         </motion.button>
         )}
+        </>
+        )}
 
         <motion.a
           href={directionsUrl(event)}
@@ -399,6 +447,7 @@ function DrawerCard({
           Directions
         </motion.a>
 
+        {!event.rally && (
         <div className="mt-[18px] flex items-start gap-[11px]">
           <CalendarDays
             size={19}
@@ -420,6 +469,7 @@ function DrawerCard({
             </p>
           </div>
         </div>
+        )}
 
         <button
           type="button"
@@ -438,8 +488,16 @@ function DrawerCard({
   );
 }
 
-/** Owner-only "•••" menu. Only actions that actually work are listed. */
-function ManageMenu({ onDelete, onCancelEvent }: { onDelete: () => void; onCancelEvent?: () => void }) {
+/** "•••" menu. Owner actions for your own events, plus the temporary demo admin action. */
+function ManageMenu({
+  onDelete,
+  onCancelEvent,
+  onAdminAction,
+}: {
+  onDelete?: () => void;
+  onCancelEvent?: () => void;
+  onAdminAction?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -506,18 +564,34 @@ function ManageMenu({ onDelete, onCancelEvent }: { onDelete: () => void; onCance
                 Cancel Event
               </button>
             )}
+            {onDelete && (
             <button
               type="button"
               role="menuitem"
               onClick={() => {
                 setOpen(false);
-                onDelete();
+                onDelete?.();
               }}
               className="flex h-10 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[14px] font-semibold text-coral-text outline-none transition-colors hover:bg-coral-soft focus-visible:bg-coral-soft"
             >
               <Trash2 size={17} strokeWidth={2.2} aria-hidden />
               Delete Event
             </button>
+            )}
+            {onAdminAction && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onAdminAction();
+                }}
+                className="flex h-10 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[14px] font-semibold text-ink-soft outline-none transition-colors hover:bg-field focus-visible:bg-field"
+              >
+                <ShieldAlert size={17} strokeWidth={2.2} aria-hidden />
+                Admin Event Action
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

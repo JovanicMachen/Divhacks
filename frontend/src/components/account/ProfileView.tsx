@@ -4,7 +4,19 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bookmark, CalendarCheck, CalendarDays, CheckCircle2, Clock, GraduationCap, Link2, MapPin, PenLine, Plus } from "lucide-react";
+import {
+  Bookmark,
+  Building2,
+  CalendarCheck,
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  GraduationCap,
+  Link2,
+  MapPin,
+  PenLine,
+  Plus,
+} from "lucide-react";
 
 import { useAccount } from "./AccountProvider";
 import { Avatar } from "./Avatar";
@@ -33,7 +45,7 @@ const EMPTY_HINT: Record<TabId, string> = {
 
 export function ProfileView() {
   const account = useAccount();
-  const { status, mode, displayName, handle, avatarUrl, university, profile, flash, setFlash } = account;
+  const { status, mode, displayName, handle, avatarUrl, university, profile, flash, setFlash, isOrg } = account;
   const { events, myEvents, going, saved, setComposeRequested } = useUserEvents();
   const router = useRouter();
   const params = useSearchParams();
@@ -83,7 +95,7 @@ export function ProfileView() {
         className="rounded-[22px] border border-line bg-panel px-5 py-6 shadow-[0_2px_8px_rgb(16_37_71_/_0.04)] tablet:px-8 tablet:py-8"
       >
         <div className="flex flex-col items-center gap-5 text-center tablet:flex-row tablet:items-start tablet:gap-8 tablet:text-left">
-          <Avatar src={avatarUrl} name={displayName} size={112} className="ring-4 ring-brand-tint" />
+          <Avatar src={avatarUrl} name={displayName} size={112} org={isOrg} className={isOrg ? undefined : "ring-4 ring-brand-tint"} />
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-col items-center gap-3 tablet:flex-row tablet:items-start tablet:justify-between">
@@ -91,6 +103,15 @@ export function ProfileView() {
                 <h1 className="break-words text-[26px] font-extrabold leading-tight tracking-[-0.02em] text-ink">
                   {displayName}
                 </h1>
+                {isOrg && (
+                  <span
+                    className="mt-1.5 inline-flex h-[24px] items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-bold"
+                    style={{ backgroundColor: "#F1EAFE", color: "#6D28D9" }}
+                  >
+                    <Building2 size={13} strokeWidth={2.5} aria-hidden />
+                    Organization
+                  </span>
+                )}
                 {handle && <p className="mt-[2px] text-[15px] font-medium text-muted">{handle}</p>}
               </div>
               <Link
@@ -252,6 +273,11 @@ function ProfileEventCard({ event }: { event: CampusEvent }) {
           {event.source === "official" && (
             <span className="shrink-0 rounded-full bg-brand-tint px-2 py-[1px] text-[11px] font-bold text-brand">
               Official
+            </span>
+          )}
+          {event.organizationEvent && (
+            <span className="shrink-0 rounded-full px-2 py-[1px] text-[11px] font-bold" style={{ backgroundColor: "#F1EAFE", color: "#6D28D9" }}>
+              Organization{event.isPaid && event.priceDisplay ? ` · ${event.priceDisplay}` : ""}
             </span>
           )}
           <CountdownChip event={event} className="ml-auto" />

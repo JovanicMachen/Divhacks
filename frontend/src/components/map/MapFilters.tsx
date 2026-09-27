@@ -6,6 +6,7 @@ import { CalendarDays, Check, ChevronDown, Grid2x2, MapPin, TrendingUp } from "l
 
 import { PizzaSliceIcon } from "@/components/icons/CategoryIcons";
 import { EVENT_CATEGORIES } from "@/lib/constants";
+import { useDragScroll } from "@/lib/use-drag-scroll";
 import { cn } from "@/lib/utils";
 import type { DateFilter, EventCategory, MapPill } from "@/types/event";
 
@@ -32,8 +33,9 @@ const PILLS: Array<{ id: MapPill; label: string; icon: IconComponent }> = [
   { id: "freeFood", label: "Free Food", icon: PizzaSliceIcon },
 ];
 
+// Phones get slightly smaller pills so more fit; tablet and up keep the approved sizes.
 const PILL_BASE =
-  "flex h-[42px] shrink-0 items-center gap-[7px] rounded-full px-[13px] text-[14px] font-semibold transition-shadow duration-150";
+  "flex h-[38px] shrink-0 items-center gap-[6px] rounded-full px-[11px] text-[13.5px] font-semibold transition-shadow duration-150 tablet:h-[42px] tablet:gap-[7px] tablet:px-[13px] tablet:text-[14px]";
 const PILL_ACTIVE =
   "bg-brand text-white shadow-[0_2px_6px_rgba(23,102,232,0.28),0_8px_18px_rgba(23,102,232,0.2)] hover:shadow-[0_3px_8px_rgba(23,102,232,0.32),0_12px_24px_rgba(23,102,232,0.24)]";
 const PILL_IDLE = "border border-line bg-panel text-ink-soft shadow-pill hover:shadow-pill-hover";
@@ -48,13 +50,15 @@ export function MapFilters({
   categoryFilter,
   onCategoryChange,
 }: MapFiltersProps) {
+  const rowRef = useDragScroll<HTMLDivElement>();
   return (
     <div
+      ref={rowRef}
       role="group"
       aria-label="Event filters"
-      className="pointer-events-none absolute left-0 right-0 top-4 z-10 overflow-x-auto px-[24px] scrollbar-none"
+      className="cc-chip-row pointer-events-none absolute left-0 right-0 top-4 z-10 px-3 tablet:px-[24px]"
     >
-      <div className="pointer-events-auto flex w-max gap-[22px] pb-1">
+      <div className="pointer-events-auto flex w-max gap-2 pb-1 tablet:gap-[22px]">
         {PILLS.map((pill) => {
           const active = pill.id === activePill;
           const Icon = pill.icon;

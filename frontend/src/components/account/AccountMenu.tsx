@@ -110,7 +110,7 @@ export function AccountMenu() {
           open && "bg-[#f5f7fb]",
         )}
       >
-        <Avatar src={signedIn ? avatarUrl : null} name={signedIn ? displayName : null} size={41} />
+        <Avatar src={signedIn ? avatarUrl : null} name={signedIn ? displayName : null} size={41} org={signedIn && account.isOrg} />
         <span className="hidden min-w-[92px] max-w-[180px] text-left leading-none desktop:block">
           <span className="block truncate text-[15px] font-bold text-ink">
             {name || <span className="block h-[14px] w-[88px] animate-pulse rounded bg-field" />}
@@ -199,13 +199,14 @@ function Divider() {
 }
 
 function AccountSummary({ onNavigate }: { onNavigate: () => void }) {
-  const { displayName, handle, avatarUrl, university } = useAccount();
+  const { displayName, handle, avatarUrl, university, isOrg } = useAccount();
   return (
     <div className="px-2.5 pb-3 pt-2.5">
       <div className="flex items-center gap-3.5">
-        <Avatar src={avatarUrl} name={displayName} size={56} />
+        <Avatar src={avatarUrl} name={displayName} size={56} org={isOrg} />
         <div className="min-w-0">
           <p className="truncate text-[17px] font-extrabold tracking-[-0.01em] text-ink">{displayName}</p>
+          {isOrg && <p className="text-[12.5px] font-bold text-[#6D28D9]">Organization</p>}
           {handle && <p className="truncate text-[13.5px] font-medium text-muted">{handle}</p>}
           <p className="mt-[2px] truncate text-[12.5px] font-medium text-faint">{university}</p>
         </div>

@@ -28,7 +28,12 @@ import { eventPath, eventPoint, useCampusState } from "@/lib/use-campus-state";
 import { useGeolocation, type GeoStatus } from "@/lib/use-geolocation";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useUserEvents } from "@/lib/user-events";
-import type { CampusEvent, EventDraft, MapPill } from "@/types/event";
+import { AdminEventDialog } from "@/components/events/AdminEventDialog";
+import { LivePanel } from "@/components/map/LivePanel";
+import { MobileCategoryChips, type LiveFilter } from "@/components/map/MobileCategoryChips";
+import { RallyToast } from "@/components/rally/RallyToast";
+import { EVENT_CATEGORIES } from "@/lib/constants";
+import { RALLY_LIMITS, type CampusEvent, type EventCategory, type EventDraft, type MapPill } from "@/types/event";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -48,6 +53,12 @@ function emptyDraft(now = new Date()): EventDraft {
     endTime,
     point: null,
     photo: null,
+    kind: "event",
+    rallyMinParticipants: RALLY_LIMITS.minParticipants.default,
+    rallyWindowMinutes: RALLY_LIMITS.windowMinutes.default,
+    rallyAnonymous: false,
+    isPaid: false,
+    priceDisplay: "",
   };
 }
 
@@ -84,8 +95,10 @@ interface CampusAppProps {
 /** The full-screen Campus Connect shell, shared by `/` and `/events/[id]`. */
 export function CampusApp({ initialEventId }: CampusAppProps) {
   const state = useCampusState(initialEventId);
-  const { mode, displayName, user } = useAccount();
-  const { canDelete, composeRequested, setComposeRequested } = useUserEvents();
+  const { mode, displayName, user, isOrg } = useAccount();
+  const { canDelete, composeRequested, setComposeRequested, adminEventAction, onNewRally } = useUserEvents();
+  const [adminFor, setAdminFor] = useState<CampusEvent | null>(null);
+  const [rallyToast, setRallyToast] = useState<CampusEvent | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [geminiOpen, setGeminiOpen] = useState(false);
   const mapRef = useRef<MapViewHandle>(null);
@@ -98,6 +111,31 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
   const [postError, setPostError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<CampusEvent | null>(null);
   const [cancelling, setCancelling] = useState<CampusEvent | null>(null);
+
+  // A new Rally from someone else shows one card, then fades after a while.
+  useEffect(() => onNewRally((event) => setRallyToast(event)), [onNewRally]);
+  useEffect(() => {
+    if (!rallyToast) return;
+    const timer = window.setTimeout(() => setRallyToast(null), 12_000);
+    return () => window.clearTimeout(timer);
+  }, [rallyToast]);
+
+  /** The phone chips and live panel share one filter, mapped onto the map's filters. */
+  const liveFilter: LiveFilter =
+    state.kindFilter !== "all"
+      ? state.kindFilter
+      : EVENT_CATEGORIES.includes(state.sidebarFilter as EventCategory)
+        ? (state.sidebarFilter as EventCategory)
+        : "all";
+  const setLiveFilter = (filter: LiveFilter) => {
+    if (filter === "all" || filter === "events" || filter === "rally") {
+      state.setKindFilter(filter);
+      state.setSidebarFilter("all");
+    } else {
+      state.setKindFilter("all");
+      state.setSidebarFilter(filter);
+    }
+  };
   // The mobile bottom sheet would cover the map while choosing a spot.
   const isSheet = useMediaQuery("(max-width: 899px)");
   const selected = state.selectedEvent;
@@ -151,10 +189,13 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
     setComposer("closed");
     setDraft(emptyDraft());
     focusEvent(result.event);
+    const rally = result.event.rally;
     state.showToast(
-      mode === "supabase"
-        ? "Your event is posted. Everyone on Campus Connect can see it now."
-        : "Your event is posted. Local preview: it's saved in this browser only.",
+      rally
+        ? `Your Rally is live. It needs ${rally.minParticipants} students in ${draft.rallyWindowMinutes} minutes.`
+        : mode === "supabase"
+          ? "Your event is posted. Everyone on Campus Connect can see it now."
+          : "Your event is posted. Local preview: it's saved in this browser only.",
     );
   };
 
@@ -165,6 +206,20 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
     setDeleting(null);
     state.showToast("Event deleted.");
     return null;
+  };
+
+  const confirmAdmin = async (action: "delete" | "cancel", code: string): Promise<string | null> => {
+    if (!adminFor) return null;
+    const error = await adminEventAction(adminFor.id, action, code);
+    if (error) return error;
+    setAdminFor(null);
+    state.showToast(action === "delete" ? "Admin action: the event was deleted." : "Admin action: the event was cancelled.");
+    return null;
+  };
+
+  const openEvent = (event: CampusEvent) => {
+    state.selectEvent(event.id);
+    focusEvent(event);
   };
 
   const confirmCancel = async (): Promise<string | null> => {
@@ -319,6 +374,15 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             }
           />
           <PickLocationBanner visible={composer === "picking"} onCancel={() => setComposer("form")} />
+          {composer !== "picking" && <MobileCategoryChips active={liveFilter} onChange={setLiveFilter} />}
+          <RallyToast
+            rally={rallyToast}
+            onView={(event) => {
+              setRallyToast(null);
+              openEvent(event);
+            }}
+            onDismiss={() => setRallyToast(null)}
+          />
           {composer !== "picking" && (
           <MapFilters
             activePill={state.mapPill}
@@ -331,6 +395,9 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
           />
           )}
           <CampusStats happeningNow={state.stats.happeningNow} freeFood={state.stats.freeFood} />
+          {composer !== "picking" && (
+            <LivePanel events={state.liveEvents} filter={liveFilter} onFilterChange={setLiveFilter} onOpenEvent={openEvent} />
+          )}
           <MapEmptyState
             visible={state.visibleEvents.length === 0}
             message={
@@ -369,9 +436,11 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
           submitting={posting}
           submitError={postError}
           localPreview={mode === "local"}
+          isOrg={isOrg}
         />
 
         <DeleteEventDialog event={deleting} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />
+        <AdminEventDialog event={adminFor} onClose={() => setAdminFor(null)} onConfirm={confirmAdmin} />
         <DeleteEventDialog
           variant="cancel"
           event={cancelling}
@@ -395,6 +464,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
                   ? () => setCancelling(selected)
                   : undefined
               }
+              onAdminAction={user ? () => setAdminFor(selected) : undefined}
             />
           )}
         </AnimatePresence>

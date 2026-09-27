@@ -3,6 +3,8 @@ import { humanizeMinutes } from "./utils";
 import type { CampusEvent, EventCategory } from "@/types/event";
 
 export type NotificationType =
+  | "rally_on"
+  | "rally_expired"
   | "event_cancelled"
   | "going_starting_now"
   | "going_starts_soon"
@@ -15,6 +17,8 @@ export type NotificationType =
 
 /** Lower is more relevant; mirrors the order the product asks for. */
 const PRIORITY: Record<NotificationType, number> = {
+  rally_on: 0,
+  rally_expired: 1,
   event_cancelled: 0,
   going_starting_now: 1,
   going_starts_soon: 1,
@@ -62,6 +66,8 @@ export interface SmartInput {
   userId: string;
   /** Categories of events the user marked Going, Saved, or posted. */
   interests: Set<EventCategory>;
+  /** Rallies the user joined or started. */
+  rallies: Set<string>;
   now: number;
 }
 
@@ -72,7 +78,7 @@ type Candidate = NewNotification & { priority: number };
  * the event record or the user's own Going / Saved; nothing is estimated.
  * dedupe_key makes each condition fire once per user and event.
  */
-export function smartNotifications({ events, going, saved, userId, interests, now }: SmartInput): NewNotification[] {
+export function smartNotifications({ events, going, saved, userId, interests, rallies, now }: SmartInput): NewNotification[] {
   const out: Candidate[] = [];
   const push = (type: NotificationType, event: CampusEvent, title: string, body?: string) =>
     out.push({
@@ -86,6 +92,20 @@ export function smartNotifications({ events, going, saved, userId, interests, no
     });
 
   for (const event of events) {
+    if (event.rally) {
+      const { rally } = event;
+      const recent = (at: string | null) => at !== null && now - Date.parse(at) <= 2 * 60 * MINUTE;
+      if (rallies.has(event.id) && event.status !== "abandoned") {
+        if (rally.status === "active" && recent(rally.activatedAt))
+          push("rally_on", event, "Rally is on!", `Your “${event.title}” Rally reached enough people.`);
+        else if (
+          (rally.status === "expired" || (rally.status === "forming" && Date.parse(rally.expiresAt) <= now)) &&
+          recent(rally.expiresAt)
+        )
+          push("rally_expired", event, "Rally expired", "Not enough students joined in time.");
+      }
+      if (event.status !== "abandoned") continue;
+    }
     if (event.status === "abandoned") {
       const cancelledAt = event.abandonedAt ? Date.parse(event.abandonedAt) : NaN;
       if (
@@ -162,6 +182,8 @@ export function smartNotifications({ events, going, saved, userId, interests, no
 export function liveStatus(event: CampusEvent | undefined, now: number): { text: string; available: boolean } {
   if (!event) return { text: "This event is no longer available", available: false };
   if (event.status === "abandoned") return { text: `Cancelled · ${event.locationName}`, available: true };
+  if (event.rally?.status === "expired") return { text: `Rally expired · ${event.locationName}`, available: true };
+  if (event.rally?.status === "active") return { text: `Rally on · ${event.locationName}`, available: true };
   const timing = timingOf(event);
   if (!timing) return { text: event.locationName, available: true };
   const { end, posted } = timing;

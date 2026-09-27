@@ -11,6 +11,7 @@ import type {
   DateFilter,
   EventCategory,
   EventDraft,
+  KindFilter,
   MapPill,
   SidebarFilter,
 } from "@/types/event";
@@ -87,6 +88,7 @@ export function useCampusState(initialEventId?: string) {
   const [mapPill, setMapPill] = useState<MapPill>("trending");
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | "all">("all");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -103,15 +105,17 @@ export function useCampusState(initialEventId?: string) {
     () =>
       liveEvents.filter((event) => {
         if (!matchesQuery(event, query)) return false;
+        if (kindFilter === "rally" && event.kind !== "rally") return false;
+        if (kindFilter === "events" && event.kind === "rally") return false;
         if (sidebarFilter === "saved" && !saved.has(event.id)) return false;
         if (sidebarFilter !== "all" && sidebarFilter !== "saved" && event.category !== sidebarFilter)
           return false;
         if (mapPill === "freeFood" && event.category !== "Free Food") return false;
         if (categoryFilter !== "all" && event.category !== categoryFilter) return false;
-        if (dateFilter === "today" && !event.dateLabel.startsWith("Today")) return false;
+        if (dateFilter === "today" && event.kind !== "rally" && !event.dateLabel.startsWith("Today")) return false;
         return true;
       }),
-    [liveEvents, query, sidebarFilter, saved, mapPill, categoryFilter, dateFilter],
+    [liveEvents, query, sidebarFilter, saved, mapPill, categoryFilter, dateFilter, kindFilter],
   );
 
   const stats = useMemo(
@@ -174,6 +178,9 @@ export function useCampusState(initialEventId?: string) {
     async (draft: EventDraft, hostName: string): Promise<{ event: CampusEvent } | { error: string }> => {
       if (!draft.point) return { error: "Choose where it's happening on the map." };
       const geo = mapToGeo(draft.point);
+      const rally = draft.kind === "rally";
+      const now = Date.now();
+      const rallyEnd = new Date(now + draft.rallyWindowMinutes * 60_000).toISOString();
       const result = await postEvent({
         title: draft.title.trim(),
         category: draft.category,
@@ -184,10 +191,21 @@ export function useCampusState(initialEventId?: string) {
         map_y: draft.point.y,
         latitude: Number(geo.lat.toFixed(6)),
         longitude: Number(geo.lng.toFixed(6)),
-        host_name: hostName,
-        start_time: toLocalIso(draft.startTime),
-        end_time: toLocalIso(draft.endTime),
-      }, draft.photo);
+        host_name: rally && draft.rallyAnonymous ? "Anonymous student" : hostName,
+        start_time: rally ? new Date(now).toISOString() : toLocalIso(draft.startTime),
+        end_time: rally ? rallyEnd : toLocalIso(draft.endTime),
+        event_type: rally ? "rally" : "event",
+        ...(rally
+          ? {
+              rally_min_participants: draft.rallyMinParticipants,
+              rally_expires_at: rallyEnd,
+              rally_anonymous: draft.rallyAnonymous,
+            }
+          : {
+              is_paid: draft.isPaid && Boolean(draft.priceDisplay.trim()),
+              price_display: draft.isPaid && draft.priceDisplay.trim() ? draft.priceDisplay.trim() : null,
+            }),
+      }, rally ? null : draft.photo);
       if ("event" in result) {
         setSelectedId(result.event.id);
         setDrawerOpen(true);
@@ -215,6 +233,7 @@ export function useCampusState(initialEventId?: string) {
   const clearFilters = useCallback(() => {
     setQuery("");
     setSidebarFilter("all");
+    setKindFilter("all");
     setMapPill("trending");
     setCategoryFilter("all");
     setDateFilter("today");
@@ -246,6 +265,8 @@ export function useCampusState(initialEventId?: string) {
     setDateFilter,
     categoryFilter,
     setCategoryFilter,
+    kindFilter,
+    setKindFilter,
     createEvent,
     deleteEvent,
     cancelEvent,

@@ -67,3 +67,17 @@ the person signs in again at `/login`.
 | `/settings` | Account settings placeholder and sign out |
 
 Ask Gemini sits beside the map on a wide screen and as a sheet on a phone. It answers from the events on the map. Set `GEMINI_API_KEY` in `.env.local` (server only) for live Gemini replies. Sharing an answer writes `campus_feedback` so other signed-in students can read it. Run that SQL file from [`../backend`](../backend/README.md).
+
+### Rallies, organizations and demo codes
+
+A Rally is a short-lived post from Post Event → Rally. It needs a minimum number of students (2–20) within a window (2–15 minutes). Joins are real rows in `rally_participants`, and the database counts them. A Rally that fills in time becomes **Rally on**; one that doesn't expires and leaves the map. "Rally anonymously" shows "Anonymous student" to everyone else, while `created_by` still holds the real owner.
+
+Two temporary hackathon codes are checked only on the server. Set them as server environment variables, never with a `NEXT_PUBLIC_` prefix:
+
+| Variable | Used by |
+| --- | --- |
+| `CAMPUS_ADMIN_EVENT_CODE` | `POST /api/admin/event` — the ••• → Admin Event Action on any stored event (delete or cancel) |
+| `CAMPUS_ORG_ACCESS_CODE` | `POST /api/organization` — Settings → Become an Organization |
+| `SUPABASE_SERVICE_ROLE_KEY` | Both routes, to change rows after the code is verified |
+
+Leave a code unset to turn that feature off. Failed codes are rate-limited per caller. Admin actions are logged by user, event, action and time, and never with the code.
