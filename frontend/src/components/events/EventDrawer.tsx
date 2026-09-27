@@ -135,7 +135,15 @@ function DrawerCard({
               transition={{ duration: 0.2 }}
               className="absolute inset-0"
             >
-              {event.iconType === "pizza" && event.source === "official" ? (
+              {event.imageUrl ? (
+                // Event photos come from Supabase Storage or a local data URL.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={event.imageUrl}
+                  alt={`Photo for ${event.title}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : event.iconType === "pizza" && event.source === "official" ? (
                 <EventHeroArt />
               ) : (
                 <CategoryHeroArt event={event} />

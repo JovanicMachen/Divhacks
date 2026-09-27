@@ -250,11 +250,14 @@ function NotificationItem({ row, event, now, onOpen, onMarkRead }: ItemProps) {
       >
         <span
           className={cn(
-            "mt-[1px] grid h-10 w-10 shrink-0 place-items-center rounded-full",
+            "mt-[1px] grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full",
             isFood ? "bg-coral-soft" : "bg-brand-tint text-brand",
           )}
         >
-          {isFood || (!Icon && category) ? (
+          {event?.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={event.imageUrl} alt="" className="h-full w-full object-cover" />
+          ) : isFood || (!Icon && category) ? (
             <CategoryGlyph category={category ?? "Free Food"} size={20} />
           ) : Icon ? (
             <Icon size={19} strokeWidth={2.2} aria-hidden />

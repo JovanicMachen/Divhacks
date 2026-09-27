@@ -104,6 +104,47 @@ export function MarkerPin({
   );
 }
 
+/** Circular cover photo with a category ring, a pointer to the spot, and a small category badge. */
+export function PhotoBubble({
+  imageUrl,
+  markerColor,
+  iconType,
+  selected = false,
+}: Pick<CampusEvent, "markerColor" | "iconType"> & { imageUrl: string; selected?: boolean }) {
+  const palette = MARKER_PALETTE[markerColor];
+  const Icon = MARKER_ICONS[iconType];
+  const size = selected ? 50 : 42;
+  return (
+    <>
+      <span
+        className="absolute left-0 top-0 block overflow-hidden rounded-full border-[2.5px] border-white bg-field"
+        style={{ width: size, height: size, boxShadow: `0 0 0 2.5px ${palette.solid}` }}
+      >
+        {/* Event photos come from Supabase Storage or a local data URL. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={imageUrl} alt="" draggable={false} className="h-full w-full object-cover" />
+      </span>
+      <svg
+        viewBox="0 0 14 9"
+        width={14}
+        height={9}
+        aria-hidden
+        className="absolute"
+        style={{ left: size / 2 - 7, top: size + 1 }}
+      >
+        <path d="M0 0h14L7 9Z" fill={palette.solid} />
+      </svg>
+      <span
+        aria-hidden
+        className="absolute grid place-items-center rounded-full text-white ring-2 ring-white"
+        style={{ width: 18, height: 18, left: size - 14, top: size - 16, backgroundColor: palette.solid }}
+      >
+        <Icon size={10} strokeWidth={2.6} />
+      </span>
+    </>
+  );
+}
+
 /**
  * A single teardrop pin anchored by its tip to the event's map position.
  * Only the selected marker carries the soft outer glow.
@@ -117,8 +158,10 @@ export function EventMarker({
   interactive = true,
 }: EventMarkerProps) {
   const palette = MARKER_PALETTE[event.markerColor];
-  const width = selected ? 39 : 34;
-  const height = selected ? 50 : 44;
+  const photo = event.imageUrl ?? null;
+  // A photo bubble is a circle plus a 10px pointer; its tip sits on the spot like the pin's.
+  const width = photo ? (selected ? 50 : 42) : selected ? 39 : 34;
+  const height = photo ? width + 10 : selected ? 50 : 44;
 
   return (
     <MapAnchor x={point.x} y={point.y} inverseScale={inverseScale} className={selected ? "z-[2]" : "z-[1]"}>
@@ -155,7 +198,11 @@ export function EventMarker({
         )}
         style={{ width, height }}
       >
-        <MarkerPin markerColor={event.markerColor} iconType={event.iconType} selected={selected} />
+        {photo ? (
+          <PhotoBubble imageUrl={photo} markerColor={event.markerColor} iconType={event.iconType} selected={selected} />
+        ) : (
+          <MarkerPin markerColor={event.markerColor} iconType={event.iconType} selected={selected} />
+        )}
       </motion.button>
     </div>
     </MapAnchor>

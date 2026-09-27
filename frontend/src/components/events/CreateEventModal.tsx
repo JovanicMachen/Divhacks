@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, Check, ChevronDown, Info, Loader2, MapPin, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ImagePlus, Info, Loader2, MapPin, RefreshCw, Trash2, X } from "lucide-react";
 
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import { CAMPUS_LOCATIONS, getCampusLocation } from "@/data/campus-locations";
 import { CATEGORY_STYLE, EVENT_CATEGORIES, MARKER_PALETTE } from "@/lib/constants";
+import { PHOTO_TYPES, photoError } from "@/lib/event-photos";
 import { cn, isTimeRangeValid } from "@/lib/utils";
 import type { EventDraft } from "@/types/event";
 
@@ -38,6 +39,89 @@ function validate(draft: EventDraft): Partial<Record<Field, string>> {
   if (!draft.point) errors.point = "Pick a campus location or choose a spot on the map.";
   if (!isTimeRangeValid(draft.startTime, draft.endTime)) errors.time = "End time must be after the start time.";
   return errors;
+}
+
+/** Optional cover photo: pick, preview, replace, or remove before posting. */
+function PhotoField({ photo, onChange }: { photo: File | null; onChange: (photo: File | null) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const preview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
+
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const problem = photoError(file);
+    setError(problem);
+    if (!problem) onChange(file);
+  };
+
+  return (
+    <div>
+      <span className={LABEL}>
+        Photo <span className="font-medium text-faint">(optional)</span>
+      </span>
+      <input
+        ref={inputRef}
+        id="ev-photo"
+        type="file"
+        accept={PHOTO_TYPES.join(",")}
+        onChange={pick}
+        aria-label="Event photo"
+        className="sr-only"
+      />
+      {preview ? (
+        <div className="flex items-center gap-3 rounded-[14px] border border-line bg-field p-2">
+          {/* Local object URL for the chosen file; next/image doesn't apply. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="Selected event photo" className="h-[72px] w-[96px] shrink-0 rounded-[10px] object-cover" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13.5px] font-semibold text-ink">{photo?.name}</p>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="flex h-8 items-center gap-1.5 rounded-[9px] bg-brand-soft px-2.5 text-[13px] font-bold text-brand transition-colors hover:bg-[#dde8fa]"
+              >
+                <RefreshCw size={14} strokeWidth={2.4} aria-hidden />
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(null);
+                  setError(null);
+                }}
+                className="flex h-8 items-center gap-1.5 rounded-[9px] bg-panel px-2.5 text-[13px] font-bold text-ink-soft ring-1 ring-line transition-colors hover:bg-[#f5f7fb]"
+              >
+                <Trash2 size={14} strokeWidth={2.4} aria-hidden />
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex h-[72px] w-full items-center justify-center gap-2 rounded-[14px] border border-dashed border-line-strong bg-field text-[14px] font-bold text-ink-soft transition-colors hover:border-brand/40 hover:bg-brand-tint hover:text-brand"
+        >
+          <ImagePlus size={19} strokeWidth={2.2} aria-hidden />
+          Add a photo
+          <span className="font-medium text-faint">· JPG, PNG or WebP, up to 5 MB</span>
+        </button>
+      )}
+      {error && (
+        <p role="alert" className="mt-[6px] text-[12.5px] font-semibold text-coral-text">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }
 
 /** "Post Event" form. */
@@ -157,6 +241,8 @@ export function CreateEventModal({
                   className={cn(INPUT, "resize-none py-2.5 leading-[1.4]")}
                 />
               </div>
+
+              <PhotoField photo={draft.photo} onChange={(photo) => set("photo", photo)} />
 
               <fieldset>
                 <legend className={LABEL}>Category</legend>

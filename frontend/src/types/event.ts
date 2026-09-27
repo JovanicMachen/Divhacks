@@ -67,6 +67,8 @@ export interface CampusEvent {
   endsAt?: string;
   /** When the row was stored; only events from the database have it. */
   createdAt?: string;
+  /** Cover photo URL, when the host added one. */
+  imageUrl?: string | null;
 }
 
 /** Sidebar selection: a category, every event, or the user's saved events. */
@@ -89,4 +91,6 @@ export interface EventDraft {
   endTime: string;
   /** Pin position on the campus map in %, from the picked place or a map tap. */
   point: { x: number; y: number } | null;
+  /** Optional cover photo, uploaded when the event is posted. */
+  photo: File | null;
 }

@@ -178,7 +178,7 @@ export function useCampusState(initialEventId?: string) {
         host_name: hostName,
         starts_at: toLocalIso(draft.startTime),
         ends_at: toLocalIso(draft.endTime),
-      });
+      }, draft.photo);
       if ("event" in result) {
         setSelectedId(result.event.id);
         setDrawerOpen(true);

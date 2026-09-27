@@ -44,6 +44,7 @@ function emptyDraft(now = new Date()): EventDraft {
     startTime: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
     endTime,
     point: null,
+    photo: null,
   };
 }
 

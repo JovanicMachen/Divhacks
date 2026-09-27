@@ -174,8 +174,13 @@ function SearchField({ query, onQueryChange, results, onSelectResult }: SearchPr
                       index === active ? "bg-brand-tint" : ""
                     }`}
                   >
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-field">
-                      <CategoryGlyph category={event.category} size={17} />
+                    <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-field">
+                      {event.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={event.imageUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <CategoryGlyph category={event.category} size={17} />
+                      )}
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[14.5px] font-bold text-ink">

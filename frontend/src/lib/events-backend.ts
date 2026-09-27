@@ -1,6 +1,7 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 
 import { CATEGORY_STYLE } from "./constants";
+import { blobToDataUrl, preparePhoto, removeEventPhoto, uploadEventPhoto } from "./event-photos";
 import { localAccountStore } from "./local-account";
 import { formatClock, humanizeMinutes, todayLabel } from "./utils";
 import { getCampusLocation } from "@/data/campus-locations";
@@ -25,10 +26,12 @@ export interface EventRow {
   starts_at: string | null;
   ends_at: string | null;
   created_at: string;
+  /** Public URL of the cover photo; absent until the event photos migration runs. */
+  image_url?: string | null;
 }
 
 /** What the client sends; the owner and source are never taken from here. */
-export type NewEventRow = Omit<EventRow, "id" | "created_by" | "source" | "created_at" | "starts_at" | "ends_at"> & {
+export type NewEventRow = Omit<EventRow, "id" | "created_by" | "source" | "created_at" | "starts_at" | "ends_at" | "image_url"> & {
   starts_at: string;
   ends_at: string;
 };
@@ -37,9 +40,9 @@ export type EventChange = { type: "upsert"; row: EventRow } | { type: "delete"; 
 
 export interface EventsBackend {
   list: () => Promise<EventRow[]>;
-  /** Resolves with the stored row; rejects with a user-facing message. */
-  insert: (row: NewEventRow) => Promise<EventRow>;
-  /** Rejects when nothing was deleted (not the owner, or already gone). */
+  /** Resolves with the stored row; rejects with a user-facing message. `photo` is optional. */
+  insert: (row: NewEventRow, photo?: File | null) => Promise<EventRow>;
+  /** Rejects when nothing was deleted (not the owner, or already gone). Also removes the event's own photo. */
   remove: (id: string) => Promise<void>;
   subscribe: (onChange: (change: EventChange) => void) => () => void;
 }
@@ -51,6 +54,10 @@ function describe(error: PostgrestError | { message: string; code?: string }, ac
   if (/failed to fetch|network|load failed/i.test(message)) return new Error(NETWORK_ERROR);
   if (error.code === "42P01" || error.code === "PGRST205" || /could not find the table|does not exist/i.test(message))
     return new Error("The events table doesn't exist yet. Run backend/supabase/migrations in the Supabase SQL editor first.");
+  if (/image_url/.test(message))
+    return new Error("Event photos need one more database update. Run backend/supabase/migrations/20260926240000_event_photos.sql, or post without a photo.");
+  if (/events_image_in_owner_folder/.test(message))
+    return new Error("That photo isn't in your own upload folder, so it can't be attached.");
   if (error.code === "42703" || error.code === "PGRST204" || /column .* does not exist|could not find the '.*' column/i.test(message))
     return new Error("The events table is missing columns this app needs. Run backend/supabase/migrations/20260926220000_events_live_schema_compat.sql first.");
   if (error.code === "23503")
@@ -70,22 +77,44 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
       if (error) throw describe(error, "load");
       return (data ?? []) as EventRow[];
     },
-    async insert(row) {
+    async insert(row, photo) {
       // created_by defaults to auth.uid() in the database, and RLS rejects any
       // row whose owner isn't the caller, so it is deliberately not sent.
+      if (!photo) {
+        const { data, error } = await supabase
+          .from("events")
+          .insert({ ...row, source: "student" })
+          .select("*")
+          .single();
+        if (error) throw describe(error, "post");
+        return data as EventRow;
+      }
+
+      // The photo goes to <user id>/<event id>/, so the id is chosen here and the
+      // row is saved with its photo in one insert (other clients get both at once).
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session.session?.user.id;
+      if (!userId) throw new Error("You need to be signed in to post an event.");
+      const id = crypto.randomUUID();
+      const { url } = await uploadEventPhoto(supabase, userId, id, await preparePhoto(photo));
       const { data, error } = await supabase
         .from("events")
-        .insert({ ...row, source: "student" })
+        .insert({ ...row, id, image_url: url, source: "student" })
         .select("*")
         .single();
-      if (error) throw describe(error, "post");
+      if (error) {
+        await removeEventPhoto(supabase, userId, id, url);
+        throw describe(error, "post");
+      }
       return data as EventRow;
     },
     async remove(id) {
-      const { data, error } = await supabase.from("events").delete().eq("id", id).select("id");
+      const { data, error } = await supabase.from("events").delete().eq("id", id).select("*");
       if (error) throw describe(error, "delete");
       // RLS silently filters rows the caller doesn't own, so zero rows means "not yours".
       if (!data || data.length === 0) throw new Error("This event couldn't be deleted. Only its host can delete it.");
+      const deleted = data[0] as EventRow;
+      await removeEventPhoto(supabase, deleted.created_by, deleted.id, deleted.image_url);
     },
     subscribe(onChange) {
       const channel = supabase
@@ -140,11 +169,14 @@ export function createLocalEventsBackend(): EventsBackend {
     async list() {
       return readLocal();
     },
-    async insert(row) {
+    async insert(row, photo) {
       const owner = currentUserId();
       if (!owner) throw new Error("You need to be signed in to post an event.");
+      // No Storage in local preview: keep a small copy of the photo on the row.
+      const image_url = photo ? await blobToDataUrl(await preparePhoto(photo, 720, 0.78)) : null;
       const stored: EventRow = {
         ...row,
+        image_url,
         id: crypto.randomUUID(),
         created_by: owner,
         source: "student",
@@ -242,5 +274,6 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     startsAt: row.starts_at ?? undefined,
     endsAt: row.ends_at ?? undefined,
     createdAt: row.created_at,
+    imageUrl: row.image_url ?? null,
   };
 }

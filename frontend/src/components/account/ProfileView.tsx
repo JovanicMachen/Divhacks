@@ -235,10 +235,15 @@ function ProfileEventCard({ event }: { event: CampusEvent }) {
       className="group flex items-center gap-3.5 rounded-[16px] border border-line bg-panel p-3 transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-pill-hover"
     >
       <span
-        className="grid h-14 w-14 shrink-0 place-items-center rounded-[14px]"
+        className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-[14px]"
         style={{ backgroundColor: palette.soft, color: palette.text }}
       >
-        <CategoryGlyph category={event.category} size={26} />
+        {event.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={event.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <CategoryGlyph category={event.category} size={26} />
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">

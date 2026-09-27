@@ -36,7 +36,7 @@ interface UserEventsValue {
   /** True when the signed-in user may delete this event. */
   canDelete: (event: CampusEvent) => boolean;
   /** Resolves with the stored event, or a user-facing error message. */
-  postEvent: (row: NewEventRow) => Promise<{ event: CampusEvent } | { error: string }>;
+  postEvent: (row: NewEventRow, photo?: File | null) => Promise<{ event: CampusEvent } | { error: string }>;
   /** Resolves with a user-facing error message, or null once deleted. */
   deleteEvent: (id: string) => Promise<string | null>;
   /** Called with events removed by someone else (e.g. deleted in another tab). */
@@ -177,10 +177,10 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
   );
 
   const postEvent = useCallback(
-    async (row: NewEventRow) => {
+    async (row: NewEventRow, photo?: File | null) => {
       if (!backend || !userId) return { error: "You need to be signed in to post an event." };
       try {
-        const stored = await backend.insert(row);
+        const stored = await backend.insert(row, photo);
         setLoaded((prev) =>
           prev && prev.userId === userId ? { ...prev, rows: applyChange(prev.rows, { type: "upsert", row: stored }) } : prev,
         );
