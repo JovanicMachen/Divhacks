@@ -40,8 +40,14 @@ Paste each file into the Supabase SQL editor and run it once. Every file only ad
    - New table `admin_event_actions`: a private log of the demo admin override.
    - If `pg_cron` is enabled, Rallies are also expired every minute on the server.
 
+8. [`20260927030000_going_and_chat_access.sql`](supabase/migrations/20260927030000_going_and_chat_access.sql) — Stores I'm Going in a new `event_going` table so the database can check it.
+   - One row per person per event. `event_id` is text so official listings can be joined too.
+   - Each person can only see, add and remove their own rows, and can only add while the event is open.
+   - Adds a restrictive rule on `event_messages`: a message can only be posted by someone going to the event, its organizer, or someone who joined its Rally.
+   - Going reaches the same person's other devices through realtime.
+
 Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
 
-**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`, then `27020000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
+**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`, then `27020000`, then `27030000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
 
 Official campus listings are not stored here. They ship with the frontend and cannot be deleted by a student account.
