@@ -83,7 +83,6 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
     return { byCategory, rallies: live.filter((e) => e.kind === "rally").length };
   }, [live]);
   const cards = live.filter((event) => matchesLiveFilter(event, filter));
-  const freeFood = counts.byCategory.get("Free Food") ?? 0;
 
   // The sheet floats 8px above the edge; drop it by that much so only the bar shows.
   const collapsedY = Math.max(0, height - PEEK + 8);
@@ -145,18 +144,20 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
           className="flex h-[64px] w-full shrink-0 flex-col items-center justify-center px-4 text-left"
         >
           <span aria-hidden className="mb-[7px] block h-1 w-9 rounded-full bg-line-strong" />
-          <span className="flex w-full items-center gap-2.5 text-[14px] font-bold text-ink">
+          {/* Counted from the loaded events: live now, still on the map, and Rallies. */}
+          <span className="flex w-full min-w-0 items-center gap-2 whitespace-nowrap text-[13.5px] font-bold text-ink">
             <span className="flex items-center gap-1.5">
               <span className="cc-live-dot h-2 w-2 rounded-full bg-[#F5453A]" aria-hidden />
               <span className="tabular-nums">{live.length}</span> live
             </span>
             <span aria-hidden className="text-faint">·</span>
-            <span className="flex items-center gap-1 font-semibold text-ink-soft">
-              Free Food <span className="font-bold tabular-nums text-ink">{freeFood}</span>
+            <span className="truncate font-semibold text-ink-soft">
+              <span className="font-bold tabular-nums text-ink">{events.length}</span>{" "}
+              {events.length === 1 ? "event" : "events"} available
             </span>
             <span aria-hidden className="text-faint">·</span>
-            <span className="flex items-center gap-1 font-semibold text-ink-soft">
-              Rally <span className="font-bold tabular-nums text-ink">{counts.rallies}</span>
+            <span className="font-semibold text-ink-soft">
+              <span className="font-bold tabular-nums text-ink">{counts.rallies}</span> {counts.rallies === 1 ? "Rally" : "Rallies"}
             </span>
             <ChevronUp
               size={18}

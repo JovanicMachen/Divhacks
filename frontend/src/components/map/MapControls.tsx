@@ -40,7 +40,7 @@ export function MapControls({ onZoomIn, onZoomOut, onLocate, locating, located }
       </motion.button>
 
       {/* Phones: two separate 44px buttons with a gap. Tablet and up: the joined control. */}
-      <div className="flex flex-col gap-[12px] tablet:gap-0 tablet:overflow-hidden tablet:rounded-xl tablet:border tablet:border-line tablet:bg-panel tablet:shadow-pill">
+      <div className="flex flex-col gap-[16px] tablet:gap-0 tablet:overflow-hidden tablet:rounded-xl tablet:border tablet:border-line tablet:bg-panel tablet:shadow-pill">
         <ZoomButton label="Zoom in" onClick={onZoomIn}>
           <Plus size={18} strokeWidth={2.4} />
         </ZoomButton>

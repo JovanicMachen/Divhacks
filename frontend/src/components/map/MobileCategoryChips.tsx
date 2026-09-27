@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Radar } from "lucide-react";
+import { Radar, SlidersHorizontal } from "lucide-react";
 
 import { CategoryGlyph, HouseIcon } from "@/components/icons/CategoryIcons";
 import { useDragScroll } from "@/lib/use-drag-scroll";
@@ -14,8 +14,8 @@ export type LiveFilter = "all" | "events" | "rally" | EventCategory;
 
 const CHIPS: Array<{ id: LiveFilter; label: string }> = [
   { id: "all", label: "Happening" },
-  { id: "Free Food", label: "Free Food" },
   { id: "rally", label: "Rally" },
+  { id: "Free Food", label: "Free Food" },
   { id: "Social", label: "Social" },
   { id: "Academic", label: "Academic" },
   { id: "Sports", label: "Sports" },
@@ -26,10 +26,17 @@ const CHIPS: Array<{ id: LiveFilter; label: string }> = [
 interface MobileCategoryChipsProps {
   active: LiveFilter;
   onChange: (filter: LiveFilter) => void;
+  /** Opens the sheet with Trending, Near Me, date and category menu. */
+  onOpenFilters: () => void;
+  /** Shows a dot on the Filters button when any of those differ from their defaults. */
+  filtersActive: boolean;
 }
 
-/** Phone-only category row under the map pills; the desktop sidebar is unchanged. */
-export function MobileCategoryChips({ active, onChange }: MobileCategoryChipsProps) {
+/**
+ * The one filter strip over the map on phones: a Filters button, then the live
+ * categories. The desktop pill row and sidebar are unchanged.
+ */
+export function MobileCategoryChips({ active, onChange, onOpenFilters, filtersActive }: MobileCategoryChipsProps) {
   const rowRef = useDragScroll<HTMLDivElement>();
   const chipRefs = useRef(new Map<LiveFilter, HTMLButtonElement>());
   const reduceMotion = useReducedMotion();
@@ -40,13 +47,21 @@ export function MobileCategoryChips({ active, onChange }: MobileCategoryChipsPro
   }, [active, reduceMotion]);
 
   return (
-    <div
-      ref={rowRef}
-      role="group"
-      aria-label="Categories"
-      className="cc-chip-row absolute left-0 right-0 top-[62px] z-10 px-3 tablet:hidden"
-    >
-      <div className="flex w-max gap-[6px] pb-1">
+    <div className="absolute left-0 right-0 top-3 z-10 flex items-center gap-[6px] pl-3 tablet:hidden">
+      <button
+        type="button"
+        onClick={onOpenFilters}
+        aria-label={filtersActive ? "Filters (some applied)" : "Filters"}
+        aria-haspopup="dialog"
+        className="relative grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full border border-line bg-panel text-ink-soft shadow-pill transition-colors active:bg-brand-tint"
+      >
+        <SlidersHorizontal size={17} strokeWidth={2.3} aria-hidden />
+        {filtersActive && (
+          <span aria-hidden className="absolute right-[5px] top-[5px] h-2 w-2 rounded-full bg-brand ring-2 ring-panel" />
+        )}
+      </button>
+    <div ref={rowRef} role="group" aria-label="Categories" className="cc-chip-row min-w-0 flex-1 pr-3">
+      <div className="flex w-max gap-[6px] py-[2px]">
         {CHIPS.map((chip) => {
           const selected = chip.id === active;
           return (
@@ -60,7 +75,7 @@ export function MobileCategoryChips({ active, onChange }: MobileCategoryChipsPro
               aria-pressed={selected}
               onClick={() => onChange(chip.id)}
               className={cn(
-                "relative flex h-[34px] shrink-0 items-center gap-[5px] rounded-full px-[11px] text-[13px] font-semibold shadow-pill transition-colors duration-200",
+                "relative flex h-[38px] shrink-0 items-center gap-[5px] rounded-full px-[11px] text-[13px] font-semibold shadow-pill transition-colors duration-200",
                 selected ? "text-white" : "border border-line bg-panel text-ink-soft",
               )}
             >
@@ -86,6 +101,7 @@ export function MobileCategoryChips({ active, onChange }: MobileCategoryChipsPro
           );
         })}
       </div>
+    </div>
     </div>
   );
 }

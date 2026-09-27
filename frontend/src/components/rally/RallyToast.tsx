@@ -24,7 +24,7 @@ function Card({ rally, onView, onDismiss }: { rally: CampusEvent; onView: (event
   const needed = Math.max(0, info.minParticipants - info.participantCount);
   return (
     // Centred by the wrapper; the motion layer owns its own transform.
-    <div className="absolute left-1/2 top-[112px] z-30 w-[min(360px,calc(100%-24px))] -translate-x-1/2 tablet:top-[72px]">
+    <div className="absolute left-1/2 top-[62px] z-30 w-[min(360px,calc(100%-24px))] -translate-x-1/2 tablet:top-[72px]">
     <motion.div
       role="status"
       initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -14, scale: 0.97 }}

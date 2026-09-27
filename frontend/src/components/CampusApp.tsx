@@ -31,6 +31,7 @@ import { useUserEvents } from "@/lib/user-events";
 import { AdminEventDialog } from "@/components/events/AdminEventDialog";
 import { LivePanel } from "@/components/map/LivePanel";
 import { MobileCategoryChips, type LiveFilter } from "@/components/map/MobileCategoryChips";
+import { MobileFilterSheet, secondaryFiltersActive } from "@/components/map/MobileFilterSheet";
 import { RallyToast } from "@/components/rally/RallyToast";
 import { EVENT_CATEGORIES } from "@/lib/constants";
 import { RALLY_LIMITS, type CampusEvent, type EventCategory, type EventDraft, type MapPill } from "@/types/event";
@@ -99,6 +100,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
   const { canDelete, composeRequested, setComposeRequested, adminEventAction, onNewRally } = useUserEvents();
   const [adminFor, setAdminFor] = useState<CampusEvent | null>(null);
   const [rallyToast, setRallyToast] = useState<CampusEvent | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [geminiOpen, setGeminiOpen] = useState(false);
   const mapRef = useRef<MapViewHandle>(null);
@@ -374,7 +376,25 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             }
           />
           <PickLocationBanner visible={composer === "picking"} onCancel={() => setComposer("form")} />
-          {composer !== "picking" && <MobileCategoryChips active={liveFilter} onChange={setLiveFilter} />}
+          {composer !== "picking" && (
+            <MobileCategoryChips
+              active={liveFilter}
+              onChange={setLiveFilter}
+              onOpenFilters={() => setFiltersOpen(true)}
+              filtersActive={secondaryFiltersActive(state.mapPill, state.dateFilter, state.categoryFilter)}
+            />
+          )}
+          <MobileFilterSheet
+            open={filtersOpen && composer !== "picking"}
+            onClose={() => setFiltersOpen(false)}
+            activePill={state.mapPill}
+            onPillClick={handlePill}
+            locating={geo.status === "requesting"}
+            dateFilter={state.dateFilter}
+            onDateChange={state.setDateFilter}
+            categoryFilter={state.categoryFilter}
+            onCategoryChange={state.setCategoryFilter}
+          />
           <RallyToast
             rally={rallyToast}
             onView={(event) => {

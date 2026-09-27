@@ -56,7 +56,7 @@ export function MapFilters({
       ref={rowRef}
       role="group"
       aria-label="Event filters"
-      className="cc-chip-row pointer-events-none absolute left-0 right-0 top-4 z-10 px-3 tablet:px-[24px]"
+      className="cc-chip-row pointer-events-none absolute left-0 right-0 top-4 z-10 hidden px-3 tablet:block tablet:px-[24px]"
     >
       <div className="pointer-events-auto flex w-max gap-2 pb-1 tablet:gap-[22px]">
         {PILLS.map((pill) => {
