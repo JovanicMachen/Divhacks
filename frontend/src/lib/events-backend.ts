@@ -93,6 +93,10 @@ export interface EventsBackend {
   expireRallies: () => Promise<void>;
   /** Rallies the signed-in user has joined (including ones they started). */
   myRallies: () => Promise<string[]>;
+  /** Events the signed-in user marked Going, or null when Going isn't stored in the database yet. */
+  listGoing: () => Promise<string[] | null>;
+  /** Marks or unmarks the signed-in user as going. */
+  setGoing: (id: string, going: boolean) => Promise<void>;
   /** Local preview only: the demo admin override after the server accepted the code. */
   adminApply?: (id: string, action: "delete" | "cancel") => Promise<EventRow | null>;
   subscribe: (onChange: (change: EventChange) => void) => () => void;
@@ -219,6 +223,31 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
       const { data, error } = await supabase.from("rally_participants").select("event_id");
       if (error) return [];
       return (data ?? []).map((row: { event_id: string }) => row.event_id);
+    },
+    async listGoing() {
+      const { data, error } = await supabase.from("event_going").select("event_id");
+      if (error) {
+        console.warn("Going isn't stored in the database yet:", error.message);
+        return null;
+      }
+      return (data ?? []).map((row: { event_id: string }) => row.event_id);
+    },
+    async setGoing(id, going) {
+      if (going) {
+        // user_id defaults to auth.uid(); RLS only accepts your own row on an open event.
+        const { error } = await supabase.from("event_going").insert({ event_id: id });
+        if (error && error.code !== "23505") {
+          if (error.code === "42501" || /row-level security/i.test(error.message))
+            throw new Error("This event isn't taking new people anymore.");
+          throw describe(error, "join");
+        }
+        return;
+      }
+      const { data } = await supabase.auth.getSession();
+      const me = data.session?.user.id;
+      if (!me) throw new Error("You need to be signed in.");
+      const { error } = await supabase.from("event_going").delete().eq("event_id", id).eq("user_id", me);
+      if (error) throw describe(error, "update");
     },
     subscribe(onChange) {
       const channel = supabase
@@ -437,6 +466,10 @@ export function createLocalEventsBackend(): EventsBackend {
       window.localStorage.setItem(LOCAL_KEY, JSON.stringify(next));
       next.filter((row) => ids.has(row.id)).forEach((row) => channel?.postMessage({ type: "upsert", row } satisfies EventChange));
     },
+    async listGoing() {
+      return null;
+    },
+    async setGoing() {},
     async myRallies() {
       const userId = currentUserId();
       return readParticipants()

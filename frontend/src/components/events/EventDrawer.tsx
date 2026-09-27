@@ -25,7 +25,7 @@ import {
 import { AvatarStack } from "./AvatarStack";
 import { CategoryHeroArt } from "./CategoryHeroArt";
 import { CountdownChip } from "./CountdownChip";
-import { EventChat } from "./EventChat";
+import { EventChat, type ChatLock } from "./EventChat";
 import { RallyPanel } from "@/components/rally/RallyPanel";
 import { useAccount } from "@/components/account/AccountProvider";
 import { EventHeroArt } from "./EventHeroArt";
@@ -46,7 +46,8 @@ interface EventDrawerProps {
   event: CampusEvent;
   onClose: () => void;
   isGoing: boolean;
-  onToggleGoing: () => void;
+  /** Resolves with an error message, or null once saved. */
+  onToggleGoing: () => Promise<string | null> | void;
   isSaved: boolean;
   onToggleSaved: () => void;
   onShare: () => void;
@@ -71,20 +72,7 @@ export function EventDrawer(props: EventDrawerProps) {
   const isSheet = useMediaQuery("(max-width: 899px)");
   const isCompact = useMediaQuery("(max-width: 1199px)");
 
-  if (isSheet) {
-    return (
-      <motion.aside
-        aria-label={`${event.title} details`}
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ duration: 0.28, ease: OPEN_EASE }}
-        className="fixed inset-x-0 bottom-0 z-40 max-h-[86vh] px-2 pb-2"
-      >
-        <DrawerCard {...props} />
-      </motion.aside>
-    );
-  }
+  if (isSheet) return <DrawerSheet {...props} />;
 
   const columnWidth = isCompact ? 360 : 416;
 
@@ -108,6 +96,56 @@ export function EventDrawer(props: EventDrawerProps) {
         <DrawerCard {...props} />
       </motion.aside>
     </motion.div>
+  );
+}
+
+/**
+ * How much of the layout viewport the on-screen keyboard covers, and the
+ * height left above it. Null where the browser has no visualViewport.
+ */
+function useVisualViewport() {
+  const [view, setView] = useState<{ inset: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() =>
+        setView({ inset: Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)), height: Math.round(vv.height) }),
+      );
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      cancelAnimationFrame(frame);
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return view;
+}
+
+/**
+ * Phone bottom sheet. With Chat open it takes a fixed height so the message
+ * list scrolls inside it, and it rides above the keyboard while typing.
+ */
+function DrawerSheet(props: EventDrawerProps) {
+  const view = useVisualViewport();
+  const keyboard = Boolean(view && view.inset > 80);
+  return (
+    <motion.aside
+      aria-label={`${props.event.title} details`}
+      initial={{ y: "100%" }}
+      animate={{ y: 0 }}
+      exit={{ y: "100%" }}
+      transition={{ duration: 0.28, ease: OPEN_EASE }}
+      className="fixed inset-x-0 bottom-0 z-40 max-h-[86vh] px-2 pb-2 has-[[data-drawer-tab=chat]]:h-[86dvh]"
+      style={view ? { bottom: view.inset, maxHeight: Math.min(view.height * 0.94, view.height - 8) } : undefined}
+    >
+      <DrawerCard {...props} compactHero={keyboard} />
+    </motion.aside>
   );
 }
 
@@ -138,7 +176,8 @@ function DrawerCard({
   onDelete,
   onCancelEvent,
   onAdminAction,
-}: EventDrawerProps) {
+  compactHero = false,
+}: EventDrawerProps & { compactHero?: boolean }) {
   const palette = MARKER_PALETTE[event.markerColor];
   const goingCount = event.goingCount + (isGoing ? 1 : 0);
   const countdown = useEventCountdown(event);
@@ -168,11 +207,28 @@ function DrawerCard({
       ? "This event has ended. Chat is now closed."
       : null;
   const isOrganizer = event.source === "student" && Boolean(userId) && event.createdBy === userId;
+  // Anyone signed in can read; posting needs Going (or the Rally join), like the database rule.
+  const canPost = isOrganizer || isGoing || (event.rally !== null && joinedRallies.has(event.id));
+  const chatLock: ChatLock | null =
+    closedReason || canPost
+      ? null
+      : event.rally
+        ? { message: "Join the Rally to participate in chat", actionLabel: "Join Rally", onAction: () => joinRally(event.id) }
+        : {
+            message: "Join the event to participate in chat",
+            actionLabel: "I'm Going",
+            onAction: async () => (await onToggleGoing()) ?? null,
+          };
 
   return (
     <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[20px] bg-panel shadow-panel">
       <div className="shrink-0 p-[12px] pb-0">
-        <div className="relative h-[186px] overflow-hidden rounded-[16px] bg-[#D8CEC0]">
+        <div
+          className={cn(
+            "relative overflow-hidden rounded-[16px] bg-[#D8CEC0] transition-[height] duration-200",
+            compactHero && tab === "chat" ? "h-[64px]" : "h-[186px]",
+          )}
+        >
           <AnimatePresence initial={false} mode="popLayout">
             <motion.div
               key={event.id}
@@ -259,14 +315,16 @@ function DrawerCard({
       </div>
 
       {tab === "chat" ? (
-        <div className="flex min-h-0 flex-1 flex-col max-tablet:h-[min(460px,calc(86vh-260px))] max-tablet:flex-none">
+        <div data-drawer-tab="chat" className="flex min-h-0 flex-1 flex-col">
           <EventChat
             messages={chat.messages}
             authors={chat.authors}
             loaded={chat.loaded}
             loadError={chat.error}
+            onRetry={chat.retry}
             currentUserId={userId}
             closedReason={closedReason}
+            locked={chatLock}
             send={chat.send}
             remove={chat.remove}
             onPin={isOrganizer ? (messageId) => pinMessage(event.id, messageId) : undefined}

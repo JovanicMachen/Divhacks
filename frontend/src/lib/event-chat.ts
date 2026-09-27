@@ -15,6 +15,8 @@ export interface ChatMessage {
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
+  /** Client only: shown while the insert is on its way. */
+  pending?: boolean;
 }
 
 export interface ChatAuthor {
@@ -30,7 +32,8 @@ const FALLBACK_NAME = "Columbia student";
 
 interface ChatBackend {
   list: (eventId: string) => Promise<ChatMessage[]>;
-  send: (eventId: string, message: string) => Promise<ChatMessage>;
+  /** `id` is chosen by the client so a retry or the realtime echo can't create a second copy. */
+  send: (eventId: string, message: string, id: string) => Promise<ChatMessage>;
   remove: (id: string) => Promise<ChatMessage>;
   /** Inserts and soft-deletes for one event only. */
   subscribe: (eventId: string, onRow: (row: ChatMessage) => void) => () => void;
@@ -45,7 +48,8 @@ function describe(error: PostgrestError | { message: string; code?: string }): E
     return new Error(`Event chat needs one more database update. Run ${CHAT_MIGRATION} in the Supabase SQL editor.`);
   if (/event_messages_length/.test(message)) return new Error(`Messages can be up to ${MESSAGE_MAX} characters.`);
   if (/event_messages_not_blank/.test(message)) return new Error("Write a message first.");
-  if (error.code === "42501" || /row-level security/i.test(message)) return new Error("Chat is closed for this event.");
+  if (error.code === "42501" || /row-level security/i.test(message))
+    return new Error("Only students going to this event can post. Tap I'm Going, then try again.");
   return new Error(message || "Something went wrong. Please try again.");
 }
 
@@ -61,13 +65,19 @@ function createSupabaseChat(supabase: SupabaseClient): ChatBackend {
       if (error) throw describe(error);
       return ((data ?? []) as ChatMessage[]).reverse();
     },
-    async send(eventId, message) {
-      // user_id defaults to auth.uid(); RLS rejects any other author.
+    async send(eventId, message, id) {
+      // user_id defaults to auth.uid(); RLS rejects any other author, and anyone not going.
       const { data, error } = await supabase
         .from("event_messages")
-        .insert({ event_id: eventId, message })
+        .insert({ id, event_id: eventId, message })
         .select(COLUMNS)
         .single();
+      if (error?.code === "23505") {
+        // Already stored by an earlier attempt: return that row instead of a copy.
+        const existing = await supabase.from("event_messages").select(COLUMNS).eq("id", id).single();
+        if (existing.error) throw describe(existing.error);
+        return existing.data as ChatMessage;
+      }
       if (error) throw describe(error);
       return data as ChatMessage;
     },
@@ -150,11 +160,13 @@ function createLocalChat(): ChatBackend {
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .slice(-HISTORY_LIMIT);
     },
-    async send(eventId, message) {
+    async send(eventId, message, id) {
       const userId = me();
       if (!userId) throw new Error("You need to be signed in to chat.");
+      const existing = read().find((row) => row.id === id);
+      if (existing) return existing;
       const row: ChatMessage = {
-        id: crypto.randomUUID(),
+        id,
         event_id: eventId,
         user_id: userId,
         message,
@@ -225,18 +237,27 @@ export function useEventChat(eventId: string | null, { remote, userId, onIncomin
     error: null,
   });
   const [authors, setAuthors] = useState<Record<string, ChatAuthor>>({});
+  const [attempt, setAttempt] = useState(0);
   const requested = useRef(new Set<string>());
   const incomingRef = useRef(onIncoming);
   useEffect(() => {
     incomingRef.current = onIncoming;
   }, [onIncoming]);
 
+  /** Insert or replace by id, so the same message can never appear twice. */
   const merge = useCallback((target: string, row: ChatMessage) => {
     setState((prev) => {
       if (prev.eventId !== target) return { eventId: target, messages: [row], loaded: false, error: null };
+      const current = prev.messages.find((m) => m.id === row.id);
+      // A late optimistic copy must not overwrite the stored row.
+      if (current && !current.pending && row.pending) return prev;
       const others = prev.messages.filter((m) => m.id !== row.id);
       return { ...prev, messages: [...others, row].sort(byTime) };
     });
+  }, []);
+
+  const drop = useCallback((target: string, id: string) => {
+    setState((prev) => (prev.eventId === target ? { ...prev, messages: prev.messages.filter((m) => m.id !== id) } : prev));
   }, []);
 
   useEffect(() => {
@@ -269,7 +290,7 @@ export function useEventChat(eventId: string | null, { remote, userId, onIncomin
       active = false;
       unsubscribe();
     };
-  }, [eventId, remote, userId, merge]);
+  }, [eventId, remote, userId, merge, attempt]);
 
   const messages = useMemo(
     () => (state.eventId === eventId ? state.messages : NO_MESSAGES),
@@ -288,18 +309,30 @@ export function useEventChat(eventId: string | null, { remote, userId, onIncomin
 
   const send = useCallback(
     async (text: string): Promise<string | null> => {
-      if (!eventId) return "Open an event first.";
+      if (!eventId || !userId) return "Open an event first.";
       const message = text.trim();
       if (!message) return "Write a message first.";
       if (message.length > MESSAGE_MAX) return `Messages can be up to ${MESSAGE_MAX} characters.`;
+      const id = crypto.randomUUID();
+      merge(eventId, {
+        id,
+        event_id: eventId,
+        user_id: userId,
+        message,
+        created_at: new Date().toISOString(),
+        edited_at: null,
+        deleted_at: null,
+        pending: true,
+      });
       try {
-        merge(eventId, await chatBackend(remote).send(eventId, message));
+        merge(eventId, await chatBackend(remote).send(eventId, message, id));
         return null;
       } catch (error) {
+        drop(eventId, id);
         return error instanceof Error ? error.message : "Couldn't send your message.";
       }
     },
-    [eventId, remote, merge],
+    [eventId, userId, remote, merge, drop],
   );
 
   const remove = useCallback(
@@ -322,6 +355,7 @@ export function useEventChat(eventId: string | null, { remote, userId, onIncomin
     error: state.eventId === eventId ? state.error : null,
     send,
     remove,
+    retry: () => setAttempt((n) => n + 1),
   };
 }
 

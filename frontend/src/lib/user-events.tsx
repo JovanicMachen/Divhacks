@@ -56,7 +56,8 @@ interface UserEventsValue {
   /** Called once per browser session for each new Rally someone else starts. */
   onNewRally: (listener: (event: CampusEvent) => void) => () => void;
   going: Set<string>;
-  toggleGoing: (id: string) => void;
+  /** Marks or unmarks Going. Resolves with an error message, or null once saved. */
+  toggleGoing: (id: string) => Promise<string | null>;
   saved: Set<string>;
   toggleSaved: (id: string) => void;
   /** Event to open when the map next mounts (e.g. picked from the profile page). */
@@ -238,6 +239,16 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     [userId],
   );
 
+  const [joined, setJoined] = useState<{ userId: string; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!backend || !userId) return;
+    let active = true;
+    void backend.myRallies().then((ids) => active && setJoined({ userId, ids: new Set(ids) }));
+    return () => {
+      active = false;
+    };
+  }, [backend, userId]);
+
   const postEvent = useCallback(
     async (row: NewEventRow, photo?: File | null) => {
       if (!backend || !userId) return { error: "You need to be signed in to post an event." };
@@ -311,15 +322,6 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     [backend, userId, storeRow],
   );
 
-  const [joined, setJoined] = useState<{ userId: string; ids: Set<string> } | null>(null);
-  useEffect(() => {
-    if (!backend || !userId) return;
-    let active = true;
-    void backend.myRallies().then((ids) => active && setJoined({ userId, ids: new Set(ids) }));
-    return () => {
-      active = false;
-    };
-  }, [backend, userId]);
   const joinedRallies = useMemo(
     () => (joined && joined.userId === userId ? joined.ids : new Set<string>()),
     [joined, userId],
@@ -391,14 +393,62 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     () => new Set(studentEvents.filter((event) => event.status === "abandoned").map((event) => event.id)),
     [studentEvents],
   );
+  // With Supabase, Going lives in event_going so the database can check it
+  // (event chat requires it). This browser keeps a copy for local preview.
+  const [remoteGoing, setRemoteGoing] = useState<{ userId: string; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!backend || !userId) return;
+    let active = true;
+    void backend.listGoing().then(async (ids) => {
+      if (!active || ids === null) return;
+      // Carry over Going marked in this browser before it moved to the database.
+      const stored = new Set(ids);
+      const local = parseActivity(window.localStorage.getItem(activityKey(userId))).going.filter((id) => !stored.has(id));
+      for (const id of local) {
+        await backend.setGoing(id, true).then(
+          () => stored.add(id),
+          () => undefined,
+        );
+      }
+      if (active) setRemoteGoing({ userId, ids: stored });
+    });
+    return () => {
+      active = false;
+    };
+  }, [backend, userId]);
+  const remote = remoteGoing && remoteGoing.userId === userId ? remoteGoing : null;
+
   // A cancelled event takes no new Going; someone already going can still leave it.
   const toggleGoing = useCallback(
-    (id: string) =>
-      userId &&
-      updateActivity(userId, (a) =>
-        cancelledIds.has(id) && !a.going.includes(id) ? a : { ...a, going: toggledList(a.going, id) },
-      ),
-    [userId, cancelledIds],
+    async (id: string): Promise<string | null> => {
+      if (!backend || !userId) return "You need to be signed in.";
+      const current = remote ? remote.ids.has(id) : parseActivity(window.localStorage.getItem(activityKey(userId))).going.includes(id);
+      if (!current && cancelledIds.has(id)) return "This event was cancelled.";
+      const next = !current;
+      const apply = (on: boolean) =>
+        setRemoteGoing((prev) => {
+          if (!prev || prev.userId !== userId) return prev;
+          const ids = new Set(prev.ids);
+          if (on) ids.add(id);
+          else ids.delete(id);
+          return { userId, ids };
+        });
+      if (remote) {
+        apply(next);
+        try {
+          await backend.setGoing(id, next);
+        } catch (error) {
+          apply(current);
+          return error instanceof Error ? error.message : "Couldn't update Going. Please try again.";
+        }
+      }
+      updateActivity(userId, (a) => ({
+        ...a,
+        going: next ? [...a.going.filter((x) => x !== id), id] : a.going.filter((x) => x !== id),
+      }));
+      return null;
+    },
+    [backend, userId, remote, cancelledIds],
   );
   const toggleSaved = useCallback(
     (id: string) => userId && updateActivity(userId, (a) => ({ ...a, saved: toggledList(a.saved, id) })),
@@ -423,7 +473,7 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
       adminEventAction,
       onRemoteDelete,
       onNewRally,
-      going: onlyKnown(activity.going),
+      going: onlyKnown(remote ? remote.ids : activity.going),
       toggleGoing,
       saved: onlyKnown(activity.saved),
       toggleSaved,
@@ -449,6 +499,7 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     onRemoteDelete,
     onNewRally,
     activity,
+    remote,
     toggleGoing,
     toggleSaved,
     focusId,
