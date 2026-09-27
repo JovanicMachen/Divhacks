@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Campus Connect — frontend
 
-## Getting Started
+Next.js (App Router) + TypeScript + Tailwind v4 app showing what's happening on
+Columbia's campus on an interactive map, plus a Supabase-backed account area.
 
-First, run the development server:
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd frontend
+npm install
+npm run dev -- -p 43127
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://127.0.0.1:43127.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Supabase
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The app uses one browser client (`src/lib/supabase/client.ts`) configured from
+public env vars in `frontend/.env.local` (never commit this file):
 
-## Learn More
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable or anon key>
+# optional, defaults to "avatars"
+NEXT_PUBLIC_SUPABASE_AVATAR_BUCKET=avatars
+```
 
-To learn more about Next.js, take a look at the following resources:
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` is accepted in place of the publishable key.
+Only the public key is used; there is no service-role access.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Without these variables the account area runs in **local preview**: sign-in,
+profile edits, and photos are kept in this browser's localStorage so the flow
+can be exercised, and the UI says so.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Database
 
-## Deploy on Vercel
+`/profile` and `/profile/edit` read and write `public.profiles` (keyed by the
+auth user's UUID). The columns they need, a username format check, a unique
+username index, RLS policies, and the public `avatars` Storage bucket are in
+`supabase/migrations/20260926120000_profile_account_fields.sql`. The migration is
+additive (`add column if not exists`, no drops or renames) — review it, then run
+it in the Supabase SQL editor or with `supabase db push`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Routes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Route | What it is |
+| --- | --- |
+| `/` | Campus map, event drawer, search, filters, Post Event |
+| `/events/[id]` | Map with that event open |
+| `/profile` | Profile header, stats, and Posted / Attending / Saved tabs (`?tab=`) |
+| `/profile/edit` | Edit photo, display name, username, bio, website, university |
+| `/settings` | Account settings placeholder and sign out |

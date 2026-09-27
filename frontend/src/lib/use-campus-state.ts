@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CATEGORY_STYLE } from "./constants";
 import { formatClock, timeStatusFor, todayLabel } from "./utils";
-import { FEATURED_EVENT_ID, MOCK_EVENTS } from "@/data/mock-events";
+import { useUserEvents } from "./user-events";
+import { FEATURED_EVENT_ID } from "@/data/mock-events";
 import type {
   CampusEvent,
   DateFilter,
@@ -46,11 +47,13 @@ function syncUrl(event: CampusEvent | null) {
  * memory: going/saved/created events reset on refresh by design.
  */
 export function useCampusState(initialEventId?: string) {
-  const [createdEvents, setCreatedEvents] = useState<CampusEvent[]>([]);
-  const [selectedId, setSelectedId] = useState(initialEventId ?? FEATURED_EVENT_ID);
+  const { events, addCreatedEvent, going, toggleGoing, saved, toggleSaved, focusId, setFocusId } =
+    useUserEvents();
+  const [selectedId, setSelectedId] = useState(() => {
+    const requested = initialEventId ?? focusId;
+    return requested && events.some((e) => e.id === requested) ? requested : FEATURED_EVENT_ID;
+  });
   const [drawerOpen, setDrawerOpen] = useState(true);
-  const [going, setGoing] = useState<Set<string>>(() => new Set());
-  const [saved, setSaved] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("all");
   const [mapPill, setMapPill] = useState<MapPill>("trending");
@@ -59,7 +62,6 @@ export function useCampusState(initialEventId?: string) {
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const events = useMemo(() => [...MOCK_EVENTS, ...createdEvents], [createdEvents]);
   const selectedEvent = events.find((e) => e.id === selectedId) ?? events[0];
 
   const visibleEvents = useMemo(
@@ -87,6 +89,10 @@ export function useCampusState(initialEventId?: string) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
+  useEffect(() => {
+    if (focusId) setFocusId(null);
+  }, [focusId, setFocusId]);
+
   const selectEvent = useCallback(
     (id: string) => {
       const event = events.find((e) => e.id === id);
@@ -102,17 +108,6 @@ export function useCampusState(initialEventId?: string) {
     setDrawerOpen(false);
     syncUrl(null);
   }, []);
-
-  const toggleIn = (setter: typeof setGoing, id: string) =>
-    setter((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const toggleGoing = useCallback((id: string) => toggleIn(setGoing, id), []);
-  const toggleSaved = useCallback((id: string) => toggleIn(setSaved, id), []);
 
   const createEvent = useCallback(
     (draft: EventDraft): CampusEvent | null => {
@@ -139,13 +134,13 @@ export function useCampusState(initialEventId?: string) {
         iconType: style.iconType,
         isTemporary: true,
       };
-      setCreatedEvents((prev) => [...prev, event]);
+      addCreatedEvent(event);
       setSelectedId(event.id);
       setDrawerOpen(true);
       syncUrl(event);
       return event;
     },
-    [],
+    [addCreatedEvent],
   );
 
   const clearFilters = useCallback(() => {
