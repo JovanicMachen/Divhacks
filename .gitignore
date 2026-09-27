@@ -1,4 +1,11 @@
 .DS_Store
 .env
 .env.*
+!.env.example
 node_modules/
+
+# Old SQLite app. The current app stores data in Supabase.
+/data/
+*.db
+*.db-shm
+*.db-wal
