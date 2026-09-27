@@ -252,7 +252,8 @@ function ProfileEventCard({ event }: { event: CampusEvent }) {
         <span className="mt-[3px] flex items-center gap-1.5 text-[13px] font-medium text-muted">
           <Clock size={13} strokeWidth={2.3} aria-hidden className="shrink-0" />
           <span className="truncate">
-            {event.dateLabel.split("·")[0].trim()} · {event.startTime} – {event.endTime}
+            {event.dateLabel.split("·")[0].trim()} ·{" "}
+            {event.endTime ? `${event.startTime} – ${event.endTime}` : event.startTime}
           </span>
         </span>
         <span className="mt-[2px] flex items-center gap-1.5 text-[13px] font-medium text-muted">

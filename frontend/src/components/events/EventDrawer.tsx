@@ -306,8 +306,14 @@ function DrawerCard({
           <div className="min-w-0">
             <p className="text-[14.5px] font-bold leading-[1.2] text-ink">{event.dateLabel}</p>
             <p className="mt-[4px] text-[14.5px] font-medium leading-[1.2] text-muted">
-              {event.startTime} – {event.endTime}{" "}
-              <span className="font-semibold text-coral-text">({event.timeStatus})</span>
+              {event.endTime ? (
+                <>
+                  {event.startTime} – {event.endTime}{" "}
+                  <span className="font-semibold text-coral-text">({event.timeStatus})</span>
+                </>
+              ) : (
+                event.startTime
+              )}
             </p>
           </div>
         </div>
