@@ -116,7 +116,11 @@ function readLocal(): EventRow[] {
 export function createLocalEventsBackend(): EventsBackend {
   const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(CHANNEL) : null;
   const write = (rows: EventRow[], change: EventChange) => {
-    window.localStorage.setItem(LOCAL_KEY, JSON.stringify(rows));
+    try {
+      window.localStorage.setItem(LOCAL_KEY, JSON.stringify(rows));
+    } catch {
+      throw new Error("This browser couldn't save the change. Check that site storage is allowed and try again.");
+    }
     channel?.postMessage(change);
   };
   const currentUserId = () => localAccountStore.getSnapshot()?.user.id ?? null;
