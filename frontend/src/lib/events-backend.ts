@@ -241,5 +241,6 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     createdBy: row.created_by,
     startsAt: row.starts_at ?? undefined,
     endsAt: row.ends_at ?? undefined,
+    createdAt: row.created_at,
   };
 }

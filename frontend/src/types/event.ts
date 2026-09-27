@@ -65,6 +65,8 @@ export interface CampusEvent {
   /** ISO timestamps; official demo listings only carry display labels. */
   startsAt?: string;
   endsAt?: string;
+  /** When the row was stored; only events from the database have it. */
+  createdAt?: string;
 }
 
 /** Sidebar selection: a category, every event, or the user's saved events. */

@@ -3,9 +3,10 @@
 import { useId, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Crown, Menu, Search, X } from "lucide-react";
+import { Crown, Menu, Search, X } from "lucide-react";
 
 import { AccountMenu } from "@/components/account/AccountMenu";
+import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import type { CampusEvent } from "@/types/event";
 
@@ -75,7 +76,7 @@ export function TopNavbar({ onOpenSidebar, ...search }: TopNavbarProps) {
         <SearchField {...search} />
       </div>
 
-      <AccountCluster />
+      <AccountCluster onOpenEvent={search.onSelectResult} />
     </header>
   );
 }
@@ -195,23 +196,10 @@ function SearchField({ query, onQueryChange, results, onSelectResult }: SearchPr
   );
 }
 
-function AccountCluster() {
+function AccountCluster({ onOpenEvent }: { onOpenEvent: (event: CampusEvent) => void }) {
   return (
     <div className="flex shrink-0 items-center gap-2 pr-4 tablet:gap-3.5 tablet:pr-[25px]">
-      <motion.button
-        type="button"
-        aria-label="Notifications, 1 unread"
-        whileHover={{ y: -1 }}
-        whileTap={{ scale: 0.94 }}
-        transition={{ duration: 0.14, ease: "easeOut" }}
-        className="relative grid h-10 w-10 place-items-center rounded-full text-brand transition-colors duration-150 hover:bg-brand-tint"
-      >
-        <Bell size={21} strokeWidth={2.1} />
-        <span
-          aria-hidden
-          className="absolute right-[9px] top-[8px] h-[9px] w-[9px] rounded-full bg-[#F5453A] ring-2 ring-panel"
-        />
-      </motion.button>
+      <NotificationCenter onOpenEvent={onOpenEvent} />
 
       <span aria-hidden className="hidden h-[26px] w-px bg-line-strong tablet:block" />
 
