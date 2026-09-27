@@ -27,8 +27,21 @@ Paste each file into the Supabase SQL editor and run it once. Every file only ad
    - `event_messages` is added to realtime.
    - It stops without changing anything if `events` already has a status-like or pinned-message-like column it didn't create.
 
+7. [`20260927020000_rallies_organizations.sql`](supabase/migrations/20260927020000_rallies_organizations.sql) — Adds Rallies, organization accounts and informational paid events without changing `events.status`.
+   - Rally columns on `events`:
+     - `event_type` (`event` or `rally`)
+     - `rally_status` (`forming`, `active` or `expired`)
+     - `rally_min_participants` (2–20) and `rally_expires_at` (2–15 minutes)
+     - `rally_anonymous`
+     - `rally_participant_count` and `rally_activated_at`, which only the database sets
+   - Organization and price columns on `events`: `organization_event` (set by the database from the poster's profile), `is_paid` and `price_display`.
+   - `profiles` gains `is_org` and `org_verified_at`. Only the server can set them; a trigger ignores them in normal profile edits.
+   - New table `rally_participants`: one row per person per Rally. You can only add or remove your own row, and only while the Rally is open. The database counts rows, switches a Rally to `active` when it reaches its minimum, and `expire_rallies()` marks unfilled ones `expired`. The creator joins automatically.
+   - New table `admin_event_actions`: a private log of the demo admin override.
+   - If `pg_cron` is enabled, Rallies are also expired every minute on the server.
+
 Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
 
-**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
+**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`, then `27020000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
 
 Official campus listings are not stored here. They ship with the frontend and cannot be deleted by a student account.
