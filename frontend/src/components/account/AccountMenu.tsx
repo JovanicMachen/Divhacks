@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bookmark,
@@ -35,7 +36,8 @@ const ITEM =
  */
 export function AccountMenu() {
   const account = useAccount();
-  const { status, displayName, avatarUrl, university, openAuth } = account;
+  const { status, displayName, avatarUrl, university } = account;
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,7 +81,7 @@ export function AccountMenu() {
   const onTrigger = () => {
     if (status === "loading") return;
     if (!signedIn) {
-      openAuth("signIn");
+      router.push("/login");
       return;
     }
     setOpen((o) => !o);
@@ -173,6 +175,7 @@ export function AccountMenu() {
                 onClick={async () => {
                   close();
                   await account.signOut();
+                  router.replace("/login");
                 }}
                 className={ITEM}
               >

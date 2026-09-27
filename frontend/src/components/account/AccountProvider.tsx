@@ -11,7 +11,6 @@ import {
 } from "react";
 import type { PostgrestError, User } from "@supabase/supabase-js";
 
-import { AuthModal } from "./AuthModal";
 import {
   DEFAULT_UNIVERSITY,
   blobToDataUrl,
@@ -26,7 +25,6 @@ import { AVATAR_BUCKET, getSupabase, isSupabaseConfigured } from "@/lib/supabase
 import type { AccountUser, Profile, ProfileInput } from "@/types/profile";
 
 export type AccountStatus = "loading" | "signedOut" | "signedIn";
-export type AuthView = "signIn" | "signUp";
 /** A new photo to upload, a request to clear the photo, or leave it as is. */
 export type AvatarChange = { file: File } | { remove: true } | null;
 
@@ -42,12 +40,17 @@ interface AccountContextValue {
   handle: string | null;
   avatarUrl: string | null;
   university: string;
-  authView: AuthView | null;
-  openAuth: (view?: AuthView) => void;
-  closeAuth: () => void;
+  /** Resolves with a user-facing error message, or null on success. */
   signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error?: string; notice?: string }>;
+  /** `needsConfirmation` means Supabase created the user but no session yet. */
+  signUp: (
+    email: string,
+    password: string,
+    displayName: string,
+  ) => Promise<{ error?: string; needsConfirmation?: boolean }>;
   signOut: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<string | null>;
+  updatePassword: (password: string) => Promise<string | null>;
   saveProfile: (input: ProfileInput, avatar: AvatarChange) => Promise<string | null>;
   /** One-off confirmation shown on the next screen, e.g. after saving. */
   flash: string | null;
@@ -96,12 +99,19 @@ function describeDbError(error: PostgrestError | { message: string; code?: strin
   return message || "Something went wrong while saving. Please try again.";
 }
 
+const ACCOUNT_EXISTS = "An account with this email already exists. Sign in instead.";
+const BAD_CREDENTIALS = "Incorrect email or password.";
+
 function describeAuthError(message: string): string {
   if (isNetworkError(message)) return NETWORK_ERROR;
-  if (/invalid login credentials/i.test(message)) return "That email and password don't match an account.";
+  if (/invalid login credentials/i.test(message)) return BAD_CREDENTIALS;
   if (/email not confirmed/i.test(message)) return "Confirm your email address first — check your inbox.";
-  if (/already registered/i.test(message)) return "An account with this email already exists. Sign in instead.";
-  return message;
+  if (/already registered|already exists/i.test(message)) return ACCOUNT_EXISTS;
+  if (/rate limit|too many/i.test(message)) return "Too many attempts. Wait a minute and try again.";
+  if (/password/i.test(message) && /(least|short|weak|characters)/i.test(message))
+    return message.replace(/^.*?(password)/i, "Password");
+  if (/invalid.*email|email.*invalid/i.test(message)) return "Please enter a valid email address.";
+  return message || "Something went wrong. Please try again.";
 }
 
 export function AccountProvider({ children }: { children: React.ReactNode }) {
@@ -116,7 +126,6 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   const [remoteUser, setRemoteUser] = useState<AccountUser | null | undefined>(undefined);
   const [remoteProfile, setRemoteProfile] = useState<Profile | null>(null);
-  const [authView, setAuthView] = useState<AuthView | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
   useEffect(() => {
@@ -161,29 +170,33 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
-      if (!supabase) {
-        localAccountStore.signIn(email);
-        return null;
-      }
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return error ? describeAuthError(error.message) : null;
+      if (!supabase) return localAccountStore.signIn(email) ? null : BAD_CREDENTIALS;
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return describeAuthError(error.message);
+      setRemoteUser(toAccountUser(data.user));
+      return null;
     },
     [supabase],
   );
 
   const signUp = useCallback(
     async (email: string, password: string, displayName: string) => {
-      if (!supabase) {
-        localAccountStore.signIn(email, displayName);
-        return {};
-      }
+      if (!supabase) return localAccountStore.signUp(email, displayName) ? {} : { error: ACCOUNT_EXISTS };
+      // The profiles row comes from the database's auth.users trigger, which
+      // reads display_name from the user metadata.
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { display_name: displayName.trim() || undefined } },
+        options: {
+          data: { display_name: displayName.trim() },
+          emailRedirectTo: `${window.location.origin}/`,
+        },
       });
       if (error) return { error: describeAuthError(error.message) };
-      if (!data.session) return { notice: "Check your email to confirm your account, then sign in." };
+      // With confirmation on, an existing email returns a user with no identities.
+      if (data.user && data.user.identities?.length === 0) return { error: ACCOUNT_EXISTS };
+      if (!data.session) return { needsConfirmation: true };
+      setRemoteUser(toAccountUser(data.session.user));
       return {};
     },
     [supabase],
@@ -195,8 +208,29 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     await supabase.auth.signOut();
+    setRemoteUser(null);
     setRemoteProfile(null);
   }, [supabase]);
+
+  const requestPasswordReset = useCallback(
+    async (email: string) => {
+      if (!supabase) return "Password reset needs Supabase to be configured.";
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      return error ? describeAuthError(error.message) : null;
+    },
+    [supabase],
+  );
+
+  const updatePassword = useCallback(
+    async (password: string) => {
+      if (!supabase) return "Password reset needs Supabase to be configured.";
+      const { error } = await supabase.auth.updateUser({ password });
+      return error ? describeAuthError(error.message) : null;
+    },
+    [supabase],
+  );
 
   const saveProfile = useCallback(
     async (input: ProfileInput, avatar: AvatarChange): Promise<string | null> => {
@@ -274,24 +308,18 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       handle: handleFor(user, profile),
       avatarUrl: profile?.avatar_url ?? null,
       university: profile?.university || DEFAULT_UNIVERSITY,
-      authView,
-      openAuth: (view = "signIn") => setAuthView(view),
-      closeAuth: () => setAuthView(null),
       signIn,
       signUp,
       signOut,
+      requestPasswordReset,
+      updatePassword,
       saveProfile,
       flash,
       setFlash,
     };
-  }, [status, mode, user, profile, authView, signIn, signUp, signOut, saveProfile, flash]);
+  }, [status, mode, user, profile, signIn, signUp, signOut, requestPasswordReset, updatePassword, saveProfile, flash]);
 
-  return (
-    <AccountContext.Provider value={value}>
-      {children}
-      <AuthModal />
-    </AccountContext.Provider>
-  );
+  return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }
 
 export function useAccount(): AccountContextValue {

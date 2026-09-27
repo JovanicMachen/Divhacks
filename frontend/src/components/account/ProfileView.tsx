@@ -8,7 +8,6 @@ import { Bookmark, CalendarCheck, CalendarDays, CheckCircle2, Clock, GraduationC
 
 import { useAccount } from "./AccountProvider";
 import { Avatar } from "./Avatar";
-import { SignedOutCard } from "./SignedOutCard";
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import { websiteLabel } from "@/lib/account";
 import { MARKER_PALETTE } from "@/lib/constants";
@@ -46,9 +45,7 @@ export function ProfileView() {
     return () => clearTimeout(timer);
   }, [flash, setFlash]);
 
-  if (status === "loading") return <ProfileSkeleton />;
-  if (status === "signedOut")
-    return <SignedOutCard title="Sign in to see your profile" body="Your posted, attending, and saved events live here." />;
+  if (status !== "signedIn") return <ProfileSkeleton />;
 
   const lists: Record<TabId, CampusEvent[]> = {
     posted: createdEvents,

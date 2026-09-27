@@ -41,10 +41,23 @@ username index, RLS policies, and the public `avatars` Storage bucket are in
 additive (`add column if not exists`, no drops or renames) — review it, then run
 it in the Supabase SQL editor or with `supabase db push`.
 
+### Auth
+
+Everything except `/login`, `/signup`, and `/reset-password` requires a
+session (`src/components/auth/AuthGate.tsx`). Signed-out visitors are sent to
+`/login` (with `?next=` for deep links); signed-in visitors hitting `/login` or
+`/signup` go to `/`. Sessions are persisted by supabase-js, so a refresh keeps
+you signed in. Sign-up passes `display_name` in user metadata for the
+`auth.users` → `profiles` trigger; if email confirmation is on, the page asks
+the user to check their email instead of signing them in.
+
 ## Routes
 
 | Route | What it is |
 | --- | --- |
+| `/login` | Sign in, with a forgot-password link |
+| `/signup` | Create an account |
+| `/reset-password` | Choose a new password from the reset email link |
 | `/` | Campus map, event drawer, search, filters, Post Event |
 | `/events/[id]` | Map with that event open |
 | `/profile` | Profile header, stats, and Posted / Attending / Saved tabs (`?tab=`) |

@@ -8,8 +8,6 @@ import { AlertCircle, ArrowLeft, Camera, Info, Loader2 } from "lucide-react";
 
 import { useAccount, type AvatarChange } from "./AccountProvider";
 import { Avatar } from "./Avatar";
-import { INPUT, LABEL } from "./AuthModal";
-import { SignedOutCard } from "./SignedOutCard";
 import {
   BIO_MAX,
   DEFAULT_UNIVERSITY,
@@ -19,15 +17,14 @@ import {
   validateProfile,
   type ProfileErrors,
 } from "@/lib/account";
+import { INPUT, LABEL } from "@/lib/form-styles";
 import { cn } from "@/lib/utils";
 import type { ProfileInput } from "@/types/profile";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 export function ProfileEditForm() {
-  const { status, profileReady, user } = useAccount();
-  if (status === "signedOut")
-    return <SignedOutCard title="Sign in to edit your profile" body="You'll need an account to set up your profile." />;
+  const { profileReady, user } = useAccount();
   if (!profileReady || !user)
     return (
       <div aria-busy className="grid place-items-center pt-24 text-muted">

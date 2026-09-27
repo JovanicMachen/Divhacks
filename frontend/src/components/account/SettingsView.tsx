@@ -1,16 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronRight, LogOut, Mail, PenLine, Settings } from "lucide-react";
 
 import { useAccount } from "./AccountProvider";
-import { SignedOutCard } from "./SignedOutCard";
 
 export function SettingsView() {
   const { status, user, mode, signOut } = useAccount();
-  if (status === "loading") return null;
-  if (status === "signedOut")
-    return <SignedOutCard title="Sign in to manage settings" body="Account settings are available once you're signed in." />;
+  const router = useRouter();
+  if (status !== "signedIn") return null;
 
   return (
     <div className="mx-auto w-full max-w-[640px] px-3 pb-12 pt-4 tablet:px-6 tablet:pt-8">
@@ -44,7 +43,10 @@ export function SettingsView() {
         </div>
         <button
           type="button"
-          onClick={() => signOut()}
+          onClick={async () => {
+            await signOut();
+            router.replace("/login");
+          }}
           className="flex w-full items-center gap-3.5 px-5 py-4 text-left transition-colors hover:bg-[#f7f9fc]"
         >
           <span className="grid h-10 w-10 place-items-center rounded-full bg-coral-soft text-coral-text">

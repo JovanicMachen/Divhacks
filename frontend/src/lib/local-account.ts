@@ -54,12 +54,21 @@ export const localAccountStore = {
     const state = read();
     return state.current ? (state.accounts[state.current] ?? null) : null;
   },
-  signIn(email: string, displayName?: string) {
+  /** Returns false when no local account exists for this email. */
+  signIn(email: string): boolean {
     const state = read();
     const key = email.toLowerCase();
-    const existing = state.accounts[key];
-    const account: LocalAccount = existing ?? {
-      user: { id: crypto.randomUUID(), email: key, metadataDisplayName: displayName?.trim() || null },
+    if (!state.accounts[key]) return false;
+    write({ ...state, current: key });
+    return true;
+  },
+  /** Returns false when the email is already registered. */
+  signUp(email: string, displayName: string): boolean {
+    const state = read();
+    const key = email.toLowerCase();
+    if (state.accounts[key]) return false;
+    const account: LocalAccount = {
+      user: { id: crypto.randomUUID(), email: key, metadataDisplayName: displayName.trim() || null },
       profile: {
         id: "",
         display_name: null,
@@ -72,6 +81,7 @@ export const localAccountStore = {
     };
     account.profile.id = account.user.id;
     write({ current: key, accounts: { ...state.accounts, [key]: account } });
+    return true;
   },
   signOut() {
     write({ ...read(), current: null });
