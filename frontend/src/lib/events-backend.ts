@@ -3,6 +3,7 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { CATEGORY_STYLE } from "./constants";
 import { blobToDataUrl, preparePhoto, removeEventPhoto, uploadEventPhoto } from "./event-photos";
 import { localAccountStore } from "./local-account";
+import { geoToMap, isOnMap } from "./geo";
 import { formatClock, humanizeMinutes, todayLabel } from "./utils";
 import { getCampusLocation } from "@/data/campus-locations";
 import type { CampusEvent, EventCategory, EventSource } from "@/types/event";
@@ -19,21 +20,22 @@ export interface EventRow {
   location_id: string | null;
   map_x: number | null;
   map_y: number | null;
-  lat: number | null;
-  lng: number | null;
+  /** Real-world position (the live table's existing columns). */
+  latitude: number | null;
+  longitude: number | null;
   host_name: string | null;
   /** Null on rows created before the app stored times. */
-  starts_at: string | null;
-  ends_at: string | null;
+  start_time: string | null;
+  end_time: string | null;
   created_at: string;
   /** Public URL of the cover photo; absent until the event photos migration runs. */
   image_url?: string | null;
 }
 
 /** What the client sends; the owner and source are never taken from here. */
-export type NewEventRow = Omit<EventRow, "id" | "created_by" | "source" | "created_at" | "starts_at" | "ends_at" | "image_url"> & {
-  starts_at: string;
-  ends_at: string;
+export type NewEventRow = Omit<EventRow, "id" | "created_by" | "source" | "created_at" | "start_time" | "end_time" | "image_url"> & {
+  start_time: string;
+  end_time: string;
 };
 
 export type EventChange = { type: "upsert"; row: EventRow } | { type: "delete"; id: string } | { type: "reload" };
@@ -59,7 +61,7 @@ function describe(error: PostgrestError | { message: string; code?: string }, ac
   if (/events_image_in_owner_folder/.test(message))
     return new Error("That photo isn't in your own upload folder, so it can't be attached.");
   if (error.code === "42703" || error.code === "PGRST204" || /column .* does not exist|could not find the '.*' column/i.test(message))
-    return new Error("The events table is missing columns this app needs. Run backend/supabase/migrations/20260926220000_events_live_schema_compat.sql first.");
+    return new Error("The events table is missing columns this app needs. Run backend/supabase/migrations/20260926221000_events_live_schema_compat_v2.sql first.");
   if (error.code === "23503")
     return new Error("This event can't be deleted yet because other people marked it Going or Saved. The database needs to remove those rows with the event.");
   if (error.code === "42501" || /row-level security/i.test(message))
@@ -73,7 +75,7 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
       const { data, error } = await supabase
         .from("events")
         .select("*")
-        .order("starts_at", { ascending: true, nullsFirst: false });
+        .order("start_time", { ascending: true, nullsFirst: false });
       if (error) throw describe(error, "load");
       return (data ?? []) as EventRow[];
     },
@@ -138,10 +140,20 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
 const LOCAL_KEY = "campus-connect.local-events";
 const CHANNEL = "campus-connect.events";
 
+type StoredLocalRow = EventRow & { starts_at?: string; ends_at?: string; lat?: number; lng?: number };
+
 function readLocal(): EventRow[] {
   try {
-    const rows = JSON.parse(window.localStorage.getItem(LOCAL_KEY) ?? "[]");
-    return Array.isArray(rows) ? rows : [];
+    const rows: StoredLocalRow[] = JSON.parse(window.localStorage.getItem(LOCAL_KEY) ?? "[]");
+    if (!Array.isArray(rows)) return [];
+    // Local preview posts saved before the live column names were adopted.
+    return rows.map(({ starts_at, ends_at, lat, lng, ...row }) => ({
+      ...row,
+      start_time: row.start_time ?? starts_at ?? null,
+      end_time: row.end_time ?? ends_at ?? null,
+      latitude: row.latitude ?? lat ?? null,
+      longitude: row.longitude ?? lng ?? null,
+    }));
   } catch {
     return [];
   }
@@ -225,8 +237,8 @@ function statusFor(start: Date, end: Date, now: Date): string {
 
 /** When and for how long, as shown in the drawer and lists. */
 function scheduleFor(row: EventRow, now: Date) {
-  const start = row.starts_at ? new Date(row.starts_at) : null;
-  const end = row.ends_at ? new Date(row.ends_at) : null;
+  const start = row.start_time ? new Date(row.start_time) : null;
+  const end = row.end_time ? new Date(row.end_time) : null;
   if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     const posted = new Date(row.created_at);
     return {
@@ -248,9 +260,21 @@ function scheduleFor(row: EventRow, now: Date) {
   };
 }
 
+/** Where to draw the marker: stored map position, then the registry place, then latitude/longitude. */
+function mapPointFor(row: EventRow, place: ReturnType<typeof getCampusLocation>) {
+  if (row.map_x !== null && row.map_y !== null) return { x: row.map_x, y: row.map_y };
+  if (place) return { x: place.mapX, y: place.mapY };
+  if (row.latitude !== null && row.longitude !== null) {
+    const point = geoToMap({ lat: row.latitude, lng: row.longitude });
+    if (isOnMap(point)) return point;
+  }
+  return null;
+}
+
 /** A stored student event, shaped for the map, drawer and lists. */
 export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
   const place = getCampusLocation(row.location_id);
+  const point = mapPointFor(row, place);
   const style = CATEGORY_STYLE[row.category] ?? CATEGORY_STYLE.Social;
   return {
     id: row.id,
@@ -260,8 +284,8 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     address: place?.address ?? (row.location_name || "Pinned on the campus map"),
     description: row.description || "No description provided.",
     locationId: place?.id ?? null,
-    mapX: row.map_x ?? place?.mapX ?? null,
-    mapY: row.map_y ?? place?.mapY ?? null,
+    mapX: point?.x ?? null,
+    mapY: point?.y ?? null,
     distance: "On campus",
     ...scheduleFor(row, now),
     goingCount: 0,
@@ -271,8 +295,8 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     iconType: style.iconType,
     source: row.source,
     createdBy: row.created_by,
-    startsAt: row.starts_at ?? undefined,
-    endsAt: row.ends_at ?? undefined,
+    startsAt: row.start_time ?? undefined,
+    endsAt: row.end_time ?? undefined,
     createdAt: row.created_at,
     imageUrl: row.image_url ?? null,
   };

@@ -173,11 +173,11 @@ export function useCampusState(initialEventId?: string) {
         location_id: draft.locationId,
         map_x: draft.point.x,
         map_y: draft.point.y,
-        lat: Number(geo.lat.toFixed(6)),
-        lng: Number(geo.lng.toFixed(6)),
+        latitude: Number(geo.lat.toFixed(6)),
+        longitude: Number(geo.lng.toFixed(6)),
         host_name: hostName,
-        starts_at: toLocalIso(draft.startTime),
-        ends_at: toLocalIso(draft.endTime),
+        start_time: toLocalIso(draft.startTime),
+        end_time: toLocalIso(draft.endTime),
       }, draft.photo);
       if ("event" in result) {
         setSelectedId(result.event.id);
