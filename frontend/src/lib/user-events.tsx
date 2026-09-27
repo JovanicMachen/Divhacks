@@ -39,6 +39,10 @@ interface UserEventsValue {
   postEvent: (row: NewEventRow, photo?: File | null) => Promise<{ event: CampusEvent } | { error: string }>;
   /** Resolves with a user-facing error message, or null once deleted. */
   deleteEvent: (id: string) => Promise<string | null>;
+  /** Cancels the owner's event without deleting it. Resolves with an error message, or null. */
+  cancelEvent: (id: string) => Promise<string | null>;
+  /** Pins (or with null, unpins) an organizer message in the event chat. */
+  pinMessage: (eventId: string, messageId: string | null) => Promise<string | null>;
   /** Called with events removed by someone else (e.g. deleted in another tab). */
   onRemoteDelete: (listener: (id: string) => void) => () => void;
   going: Set<string>;
@@ -209,6 +213,40 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     [backend, userId],
   );
 
+  const storeRow = useCallback(
+    (row: EventRow) =>
+      setLoaded((prev) =>
+        prev && prev.userId === userId ? { ...prev, rows: applyChange(prev.rows, { type: "upsert", row }) } : prev,
+      ),
+    [userId],
+  );
+
+  const cancelEvent = useCallback(
+    async (id: string) => {
+      if (!backend || !userId) return "You need to be signed in to cancel an event.";
+      try {
+        storeRow(await backend.cancel(id));
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : "Couldn't cancel the event. Please try again.";
+      }
+    },
+    [backend, userId, storeRow],
+  );
+
+  const pinMessage = useCallback(
+    async (eventId: string, messageId: string | null) => {
+      if (!backend || !userId) return "You need to be signed in.";
+      try {
+        storeRow(await backend.setPinned(eventId, messageId));
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : "Couldn't update the pinned message.";
+      }
+    },
+    [backend, userId, storeRow],
+  );
+
   const onRemoteDelete = useCallback(
     (listener: (id: string) => void) => {
       remoteDeleteListeners.add(listener);
@@ -219,9 +257,18 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     [remoteDeleteListeners],
   );
 
+  const cancelledIds = useMemo(
+    () => new Set(studentEvents.filter((event) => event.status === "abandoned").map((event) => event.id)),
+    [studentEvents],
+  );
+  // A cancelled event takes no new Going; someone already going can still leave it.
   const toggleGoing = useCallback(
-    (id: string) => userId && updateActivity(userId, (a) => ({ ...a, going: toggledList(a.going, id) })),
-    [userId],
+    (id: string) =>
+      userId &&
+      updateActivity(userId, (a) =>
+        cancelledIds.has(id) && !a.going.includes(id) ? a : { ...a, going: toggledList(a.going, id) },
+      ),
+    [userId, cancelledIds],
   );
   const toggleSaved = useCallback(
     (id: string) => userId && updateActivity(userId, (a) => ({ ...a, saved: toggledList(a.saved, id) })),
@@ -239,6 +286,8 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
       canDelete,
       postEvent,
       deleteEvent,
+      cancelEvent,
+      pinMessage,
       onRemoteDelete,
       going: onlyKnown(activity.going),
       toggleGoing,
@@ -258,6 +307,8 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
     canDelete,
     postEvent,
     deleteEvent,
+    cancelEvent,
+    pinMessage,
     onRemoteDelete,
     activity,
     toggleGoing,

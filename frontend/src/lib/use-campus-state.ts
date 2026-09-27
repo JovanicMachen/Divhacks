@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { eventWindow, hasEnded, phaseAt, useLifecycleNow } from "./event-clock";
+import { eventWindow, isCancelled, isOffLiveMap, phaseAt, useLifecycleNow } from "./event-clock";
 import { mapToGeo, type MapPoint } from "./geo";
 import { useUserEvents } from "./user-events";
 import { FEATURED_EVENT_ID } from "@/data/mock-events";
@@ -40,6 +40,7 @@ export function eventPoint(event: CampusEvent): MapPoint | null {
 
 /** Currently running: official listings say so in their status, student events by their times. */
 export function isHappeningNow(event: CampusEvent, now: number = Date.now()): boolean {
+  if (isCancelled(event)) return false;
   const span = eventWindow(event);
   if (span) return phaseAt(span, now) === "live";
   return event.timeStatus === "Happening now" || event.timeStatus.startsWith("Ends in");
@@ -69,6 +70,7 @@ export function useCampusState(initialEventId?: string) {
     ready,
     postEvent,
     deleteEvent: removeEvent,
+    cancelEvent,
     onRemoteDelete,
     going,
     toggleGoing,
@@ -94,8 +96,8 @@ export function useCampusState(initialEventId?: string) {
 
   // Moves only when an event starts or ends, so lists and counts follow the real times.
   const lifecycleNow = useLifecycleNow(events);
-  /** What the live map shows: ended events leave it but stay in the data for profile lists. */
-  const liveEvents = useMemo(() => events.filter((event) => !hasEnded(event, lifecycleNow)), [events, lifecycleNow]);
+  /** What the live map shows: ended and cancelled events leave it but stay in the data for profile lists. */
+  const liveEvents = useMemo(() => events.filter((event) => !isOffLiveMap(event, lifecycleNow)), [events, lifecycleNow]);
 
   const visibleEvents = useMemo(
     () =>
@@ -246,6 +248,7 @@ export function useCampusState(initialEventId?: string) {
     setCategoryFilter,
     createEvent,
     deleteEvent,
+    cancelEvent,
     toast: shownToast,
     showToast,
     dismissToast: () => {

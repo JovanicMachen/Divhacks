@@ -6,7 +6,7 @@ import { localAccountStore } from "./local-account";
 import { geoToMap, isOnMap } from "./geo";
 import { formatClock, humanizeMinutes, todayLabel } from "./utils";
 import { getCampusLocation } from "@/data/campus-locations";
-import type { CampusEvent, EventCategory, EventSource } from "@/types/event";
+import type { CampusEvent, EventCategory, EventSource, EventStatus } from "@/types/event";
 
 /** A row of `public.events` (see backend/supabase/migrations). */
 export interface EventRow {
@@ -30,13 +30,31 @@ export interface EventRow {
   created_at: string;
   /** Public URL of the cover photo; absent until the event photos migration runs. */
   image_url?: string | null;
+  /** Absent until 20260927010000_event_status_and_chat.sql runs; treated as active. */
+  status?: EventStatus | null;
+  abandoned_at?: string | null;
+  pinned_message_id?: string | null;
 }
 
 /** What the client sends; the owner and source are never taken from here. */
-export type NewEventRow = Omit<EventRow, "id" | "created_by" | "source" | "created_at" | "start_time" | "end_time" | "image_url"> & {
+export type NewEventRow = Omit<
+  EventRow,
+  | "id"
+  | "created_by"
+  | "source"
+  | "created_at"
+  | "start_time"
+  | "end_time"
+  | "image_url"
+  | "status"
+  | "abandoned_at"
+  | "pinned_message_id"
+> & {
   start_time: string;
   end_time: string;
 };
+
+export const STATUS_MIGRATION = "backend/supabase/migrations/20260927010000_event_status_and_chat.sql";
 
 export type EventChange = { type: "upsert"; row: EventRow } | { type: "delete"; id: string } | { type: "reload" };
 
@@ -46,6 +64,10 @@ export interface EventsBackend {
   insert: (row: NewEventRow, photo?: File | null) => Promise<EventRow>;
   /** Rejects when nothing was deleted (not the owner, or already gone). Also removes the event's own photo. */
   remove: (id: string) => Promise<void>;
+  /** Marks the owner's event cancelled (status 'abandoned'); the row stays. Resolves with the stored row. */
+  cancel: (id: string) => Promise<EventRow>;
+  /** Pins one of the organizer's own chat messages, or clears the pin with null. */
+  setPinned: (id: string, messageId: string | null) => Promise<EventRow>;
   subscribe: (onChange: (change: EventChange) => void) => () => void;
 }
 
@@ -60,6 +82,11 @@ function describe(error: PostgrestError | { message: string; code?: string }, ac
     return new Error("Event photos need one more database update. Run backend/supabase/migrations/20260926240000_event_photos.sql, or post without a photo.");
   if (/events_image_in_owner_folder/.test(message))
     return new Error("That photo isn't in your own upload folder, so it can't be attached.");
+  if (/\b(status|abandoned_at|pinned_message_id)\b/.test(message) && /column|schema cache/i.test(message))
+    return new Error(`Cancelling events needs one more database update. Run ${STATUS_MIGRATION} first.`);
+  if (/can't be restored|can only be cancelled/i.test(message))
+    return new Error("This event was already cancelled.");
+  if (/can be pinned/i.test(message)) return new Error("Only your own messages in this event can be pinned.");
   if (error.code === "42703" || error.code === "PGRST204" || /column .* does not exist|could not find the '.*' column/i.test(message))
     return new Error("The events table is missing columns this app needs. Run backend/supabase/migrations/20260926221000_events_live_schema_compat_v2.sql first.");
   if (error.code === "23503")
@@ -117,6 +144,29 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
       if (!data || data.length === 0) throw new Error("This event couldn't be deleted. Only its host can delete it.");
       const deleted = data[0] as EventRow;
       await removeEventPhoto(supabase, deleted.created_by, deleted.id, deleted.image_url);
+    },
+    async cancel(id) {
+      // abandoned_at is set by the database; RLS limits this to the owner's student events.
+      const { data, error } = await supabase
+        .from("events")
+        .update({ status: "abandoned" })
+        .eq("id", id)
+        .eq("status", "active")
+        .select("*");
+      if (error) throw describe(error, "cancel");
+      if (!data || data.length === 0)
+        throw new Error("This event couldn't be cancelled. Only its host can cancel it, and only while it's active.");
+      return data[0] as EventRow;
+    },
+    async setPinned(id, messageId) {
+      const { data, error } = await supabase
+        .from("events")
+        .update({ pinned_message_id: messageId })
+        .eq("id", id)
+        .select("*");
+      if (error) throw describe(error, "update");
+      if (!data || data.length === 0) throw new Error("Only the event's host can pin messages.");
+      return data[0] as EventRow;
     },
     subscribe(onChange) {
       const channel = supabase
@@ -206,6 +256,30 @@ export function createLocalEventsBackend(): EventsBackend {
         rows.filter((row) => row.id !== id),
         { type: "delete", id },
       );
+    },
+    async cancel(id) {
+      const rows = readLocal();
+      const target = rows.find((row) => row.id === id);
+      if (!target || target.source !== "student" || target.created_by !== currentUserId())
+        throw new Error("This event couldn't be cancelled. Only its host can cancel it.");
+      if ((target.status ?? "active") !== "active") throw new Error("This event was already cancelled.");
+      const next: EventRow = { ...target, status: "abandoned", abandoned_at: new Date().toISOString() };
+      write(
+        rows.map((row) => (row.id === id ? next : row)),
+        { type: "upsert", row: next },
+      );
+      return next;
+    },
+    async setPinned(id, messageId) {
+      const rows = readLocal();
+      const target = rows.find((row) => row.id === id);
+      if (!target || target.created_by !== currentUserId()) throw new Error("Only the event's host can pin messages.");
+      const next: EventRow = { ...target, pinned_message_id: messageId };
+      write(
+        rows.map((row) => (row.id === id ? next : row)),
+        { type: "upsert", row: next },
+      );
+      return next;
     },
     subscribe(onChange) {
       const listener = channel ? new BroadcastChannel(CHANNEL) : null;
@@ -299,5 +373,8 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     endsAt: row.end_time ?? undefined,
     createdAt: row.created_at,
     imageUrl: row.image_url ?? null,
+    status: row.status === "abandoned" ? "abandoned" : "active",
+    abandonedAt: row.abandoned_at ?? null,
+    pinnedMessageId: row.pinned_message_id ?? null,
   };
 }

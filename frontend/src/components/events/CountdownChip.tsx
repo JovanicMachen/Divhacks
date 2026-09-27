@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock } from "lucide-react";
+import { Ban, Clock } from "lucide-react";
 
 import { useEventCountdown, type EventCountdown } from "@/lib/event-clock";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,7 @@ const SIZES = {
 } as const;
 
 interface CountdownChipProps {
-  event: Pick<CampusEvent, "startsAt" | "endsAt">;
+  event: Pick<CampusEvent, "startsAt" | "endsAt" | "status">;
   size?: keyof typeof SIZES;
   /** Render nothing once the event has ended (e.g. where "Ended" is already said). */
   hideEnded?: boolean;
@@ -41,9 +41,24 @@ interface CountdownChipProps {
  */
 export function CountdownChip({ event, size = "sm", hideEnded = false, className }: CountdownChipProps) {
   const countdown = useEventCountdown(event);
+  const s = SIZES[size];
+  if (event.status === "abandoned") {
+    if (hideEnded) return null;
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-field text-muted",
+          s.box,
+          className,
+        )}
+      >
+        <Ban size={s.icon} strokeWidth={2.4} aria-hidden />
+        Cancelled
+      </span>
+    );
+  }
   if (!countdown || (hideEnded && countdown.phase === "ended")) return null;
   const tone = countdownTone(countdown);
-  const s = SIZES[size];
   return (
     <span
       className={cn(

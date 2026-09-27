@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, Loader2, Trash2 } from "lucide-react";
+import { AlertCircle, CalendarX2, Loader2, Trash2 } from "lucide-react";
 
 import type { CampusEvent } from "@/types/event";
 
@@ -10,19 +10,56 @@ interface DeleteEventDialogProps {
   /** The event awaiting confirmation; null keeps the dialog closed. */
   event: CampusEvent | null;
   onCancel: () => void;
-  /** Resolves with a user-facing error message, or null once deleted. */
+  /** Resolves with a user-facing error message, or null once done. */
   onConfirm: () => Promise<string | null>;
+  /** Delete removes the event; cancel keeps it as history and takes it off the live map. */
+  variant?: "delete" | "cancel";
 }
 
-export function DeleteEventDialog({ event, onCancel, onConfirm }: DeleteEventDialogProps) {
+interface DialogCopy {
+  title: string;
+  body: (eventTitle: string) => string;
+  keep: string;
+  confirm: string;
+  working: string;
+}
+
+const COPY: Record<"delete" | "cancel", DialogCopy> = {
+  delete: {
+    title: "Delete event?",
+    body: (title: string) => `Are you sure you want to delete “${title}”? This will permanently remove the event.`,
+    keep: "Cancel",
+    confirm: "Delete Event",
+    working: "Deleting…",
+  },
+  cancel: {
+    title: "Cancel this event?",
+    body: () =>
+      "This will remove the event from the live campus map and notify students who are going or have saved it.",
+    keep: "Keep Event",
+    confirm: "Cancel Event",
+    working: "Cancelling…",
+  },
+};
+
+export function DeleteEventDialog({ event, onCancel, onConfirm, variant = "delete" }: DeleteEventDialogProps) {
   return (
     <AnimatePresence>
-      {event && <ConfirmDelete key={event.id} event={event} onCancel={onCancel} onConfirm={onConfirm} />}
+      {event && (
+        <ConfirmDelete key={event.id} event={event} onCancel={onCancel} onConfirm={onConfirm} variant={variant} />
+      )}
     </AnimatePresence>
   );
 }
 
-function ConfirmDelete({ event, onCancel, onConfirm }: DeleteEventDialogProps & { event: CampusEvent }) {
+function ConfirmDelete({
+  event,
+  onCancel,
+  onConfirm,
+  variant = "delete",
+}: DeleteEventDialogProps & { event: CampusEvent }) {
+  const copy = COPY[variant];
+  const Icon = variant === "cancel" ? CalendarX2 : Trash2;
   const titleId = useId();
   const bodyId = useId();
   const [deleting, setDeleting] = useState(false);
@@ -68,13 +105,13 @@ function ConfirmDelete({ event, onCancel, onConfirm }: DeleteEventDialogProps & 
         className="w-full max-w-[420px] rounded-[20px] bg-panel p-6 shadow-[0_24px_60px_rgba(15,37,71,0.22)]"
       >
         <span aria-hidden className="grid h-11 w-11 place-items-center rounded-full bg-coral-soft text-coral-text">
-          <Trash2 size={20} strokeWidth={2.3} />
+          <Icon size={20} strokeWidth={2.3} />
         </span>
         <h2 id={titleId} className="mt-4 text-[20px] font-extrabold tracking-[-0.02em] text-ink">
-          Delete event?
+          {copy.title}
         </h2>
         <p id={bodyId} className="mt-1.5 break-words text-[14.5px] font-medium leading-[1.45] text-muted">
-          Are you sure you want to delete &ldquo;{event.title}&rdquo;? This will permanently remove the event.
+          {copy.body(event.title)}
         </p>
 
         {error && (
@@ -95,7 +132,7 @@ function ConfirmDelete({ event, onCancel, onConfirm }: DeleteEventDialogProps & 
             disabled={deleting}
             className="h-11 rounded-[12px] bg-field px-5 text-[15px] font-bold text-ink-soft transition-colors hover:bg-[#e6eaf2] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Cancel
+            {copy.keep}
           </button>
           <button
             type="button"
@@ -104,7 +141,7 @@ function ConfirmDelete({ event, onCancel, onConfirm }: DeleteEventDialogProps & 
             className="flex h-11 items-center justify-center gap-2 rounded-[12px] bg-[#E0352B] px-5 text-[15px] font-bold text-white shadow-[0_4px_12px_rgb(224_53_43_/_0.24)] transition-colors hover:bg-[#C92D24] disabled:cursor-not-allowed disabled:opacity-75"
           >
             {deleting && <Loader2 size={16} strokeWidth={2.6} aria-hidden className="animate-spin" />}
-            {deleting ? "Deleting…" : "Delete Event"}
+            {deleting ? copy.working : copy.confirm}
           </button>
         </div>
       </motion.div>

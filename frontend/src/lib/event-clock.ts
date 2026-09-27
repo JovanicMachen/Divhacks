@@ -87,8 +87,19 @@ export function hasEnded(event: CampusEvent, now: number): boolean {
   return span !== null && now >= span.end;
 }
 
+/** Cancelled by its organizer (stored as status 'abandoned'). */
+export function isCancelled(event: Pick<CampusEvent, "status">): boolean {
+  return event.status === "abandoned";
+}
+
+/** Cancelled or past its end: kept for history, but off the live map, lists and counts. */
+export function isOffLiveMap(event: CampusEvent, now: number): boolean {
+  return isCancelled(event) || hasEnded(event, now);
+}
+
 /** The countdown label for timed events, the listing's own status otherwise. */
 export function liveTimeStatus(event: CampusEvent, now: number = Date.now()): string {
+  if (isCancelled(event)) return "Cancelled";
   const span = eventWindow(event);
   return span ? countdownAt(span, now).label : event.timeStatus;
 }
@@ -169,10 +180,19 @@ function useBoundaries(windows: EventWindow[]) {
 
 const serverSnapshot = () => "";
 
-/** Live countdown for one event; null when it has no stored times. Re-renders only when the text changes. */
-export function useEventCountdown(event: Pick<CampusEvent, "startsAt" | "endsAt">): EventCountdown | null {
+/**
+ * Live countdown for one event; null when it has no stored times or was
+ * cancelled. Re-renders only when the text changes.
+ */
+export function useEventCountdown(
+  event: Pick<CampusEvent, "startsAt" | "endsAt"> & Partial<Pick<CampusEvent, "status">>,
+): EventCountdown | null {
   const { startsAt, endsAt } = event;
-  const span = useMemo(() => eventWindow({ startsAt, endsAt }), [startsAt, endsAt]);
+  const cancelled = event.status === "abandoned";
+  const span = useMemo(
+    () => (cancelled ? null : eventWindow({ startsAt, endsAt })),
+    [startsAt, endsAt, cancelled],
+  );
   useBoundaries(useMemo(() => (span ? [span] : []), [span]));
   const key = useSyncExternalStore(
     subscribe,

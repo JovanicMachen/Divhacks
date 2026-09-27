@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { TopNavbar } from "./TopNavbar";
-import { hasEnded, useLifecycleNow } from "@/lib/event-clock";
+import { isOffLiveMap, useLifecycleNow } from "@/lib/event-clock";
 import { eventPath } from "@/lib/use-campus-state";
 import { useUserEvents } from "@/lib/user-events";
 
@@ -20,7 +20,7 @@ export function PageShell({ children }: { children: React.ReactNode }) {
     if (!q) return [];
     return events.filter(
       (e) =>
-        !hasEnded(e, lifecycleNow) &&
+        !isOffLiveMap(e, lifecycleNow) &&
         [e.title, e.category, e.locationName, e.host].some((field) => field.toLowerCase().includes(q)),
     );
   }, [events, query, lifecycleNow]);

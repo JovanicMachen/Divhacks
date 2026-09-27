@@ -97,6 +97,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<CampusEvent | null>(null);
+  const [cancelling, setCancelling] = useState<CampusEvent | null>(null);
   // The mobile bottom sheet would cover the map while choosing a spot.
   const isSheet = useMediaQuery("(max-width: 899px)");
   const selected = state.selectedEvent;
@@ -163,6 +164,15 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
     if (error) return error;
     setDeleting(null);
     state.showToast("Event deleted.");
+    return null;
+  };
+
+  const confirmCancel = async (): Promise<string | null> => {
+    if (!cancelling) return null;
+    const error = await state.cancelEvent(cancelling.id);
+    if (error) return error;
+    setCancelling(null);
+    state.showToast("Event cancelled. It's off the live map, and its chat is now closed.");
     return null;
   };
 
@@ -362,6 +372,12 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
         />
 
         <DeleteEventDialog event={deleting} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />
+        <DeleteEventDialog
+          variant="cancel"
+          event={cancelling}
+          onCancel={() => setCancelling(null)}
+          onConfirm={confirmCancel}
+        />
 
         <AnimatePresence initial={false}>
           {showDrawer && selected && (
@@ -374,6 +390,11 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
               onToggleSaved={() => state.toggleSaved(selected.id)}
               onShare={() => shareEvent(selected, state.showToast)}
               onDelete={canDelete(selected) ? () => setDeleting(selected) : undefined}
+              onCancelEvent={
+                canDelete(selected) && state.liveEvents.some((e) => e.id === selected.id)
+                  ? () => setCancelling(selected)
+                  : undefined
+              }
             />
           )}
         </AnimatePresence>

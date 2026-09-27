@@ -9,6 +9,7 @@ import {
   Bookmark,
   CalendarClock,
   CalendarPlus,
+  CalendarX2,
   Check,
   CheckCheck,
   Megaphone,
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
 import type { CampusEvent, EventCategory } from "@/types/event";
 
 const TYPE_ICON: Record<string, LucideIcon> = {
+  event_cancelled: CalendarX2,
   going_starting_now: BellRing,
   going_starts_soon: CalendarClock,
   saved_starts_soon: Bookmark,
@@ -268,7 +270,11 @@ function NotificationItem({ row, event, now, onOpen, onMarkRead }: ItemProps) {
           <span className={cn("block text-[14px] leading-[1.3] text-ink", unread ? "font-bold" : "font-semibold text-ink-soft")}>
             {row.title}
           </span>
-          {event && <span className="mt-[2px] block truncate text-[13px] font-semibold text-ink-soft">{event.title}</span>}
+          {row.type === "event_cancelled" && row.body ? (
+            <span className="mt-[2px] block text-[13px] font-semibold leading-[1.35] text-ink-soft">{row.body}</span>
+          ) : (
+            event && <span className="mt-[2px] block truncate text-[13px] font-semibold text-ink-soft">{event.title}</span>
+          )}
           {event && <CountdownChip event={event} hideEnded className="mt-[5px]" />}
           <span className={cn("mt-[2px] block text-[12.5px] font-medium", status.available ? "text-muted" : "text-faint")}>
             {status.text} · {ageLabel(row.created_at, now)}

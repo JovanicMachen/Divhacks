@@ -56,5 +56,6 @@ export function normalizeOfficialEvent(raw: RawOfficialEvent): CampusEvent {
     emphasis: raw.emphasis,
     source: "official",
     createdBy: null,
+    status: "active",
   };
 }

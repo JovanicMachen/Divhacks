@@ -101,6 +101,15 @@ export const localAccountStore = {
   signOut() {
     write({ ...read(), current: null });
   },
+  /** Public name and photo of a local account, for chat. Never the email. */
+  publicProfile(userId: string): { name: string | null; avatarUrl: string | null } | null {
+    const account = Object.values(read().accounts).find((a) => a.user.id === userId);
+    if (!account) return null;
+    return {
+      name: account.profile.display_name?.trim() || account.user.metadataDisplayName?.trim() || null,
+      avatarUrl: account.profile.avatar_url ?? null,
+    };
+  },
   saveProfile(profile: Profile) {
     const state = read();
     const current = tabSession(state);

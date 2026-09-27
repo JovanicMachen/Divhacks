@@ -3,6 +3,7 @@ import { humanizeMinutes } from "./utils";
 import type { CampusEvent, EventCategory } from "@/types/event";
 
 export type NotificationType =
+  | "event_cancelled"
   | "going_starting_now"
   | "going_starts_soon"
   | "saved_starts_soon"
@@ -14,6 +15,7 @@ export type NotificationType =
 
 /** Lower is more relevant; mirrors the order the product asks for. */
 const PRIORITY: Record<NotificationType, number> = {
+  event_cancelled: 0,
   going_starting_now: 1,
   going_starts_soon: 1,
   saved_starts_soon: 2,
@@ -34,6 +36,8 @@ const FRESH_POST_MINUTES = 60;
 const JUST_POSTED_MINUTES = 15;
 /** At most this many new notifications per pass, most relevant first. */
 const MAX_PER_PASS = 4;
+/** Cancellations older than this are history, not news. */
+const CANCELLED_NOTICE_HOURS = 72;
 
 interface Timing {
   start: number;
@@ -70,11 +74,11 @@ type Candidate = NewNotification & { priority: number };
  */
 export function smartNotifications({ events, going, saved, userId, interests, now }: SmartInput): NewNotification[] {
   const out: Candidate[] = [];
-  const push = (type: NotificationType, event: CampusEvent, title: string) =>
+  const push = (type: NotificationType, event: CampusEvent, title: string, body?: string) =>
     out.push({
       type,
       title,
-      body: `${event.title} · ${event.locationName}`,
+      body: body ?? `${event.title} · ${event.locationName}`,
       event_id: event.id,
       dedupe_key: `${type}:${event.id}`,
       metadata: { priority: PRIORITY[type], category: event.category },
@@ -82,6 +86,18 @@ export function smartNotifications({ events, going, saved, userId, interests, no
     });
 
   for (const event of events) {
+    if (event.status === "abandoned") {
+      const cancelledAt = event.abandonedAt ? Date.parse(event.abandonedAt) : NaN;
+      if (
+        (going.has(event.id) || saved.has(event.id)) &&
+        event.createdBy !== userId &&
+        !Number.isNaN(cancelledAt) &&
+        now - cancelledAt <= CANCELLED_NOTICE_HOURS * 60 * MINUTE
+      ) {
+        push("event_cancelled", event, "Event cancelled", `“${event.title}” was cancelled by its organizer.`);
+      }
+      continue;
+    }
     const timing = timingOf(event);
     if (!timing || timing.end <= now) continue;
     const { start, end, posted } = timing;
@@ -145,6 +161,7 @@ export function smartNotifications({ events, going, saved, userId, interests, no
  */
 export function liveStatus(event: CampusEvent | undefined, now: number): { text: string; available: boolean } {
   if (!event) return { text: "This event is no longer available", available: false };
+  if (event.status === "abandoned") return { text: `Cancelled · ${event.locationName}`, available: true };
   const timing = timingOf(event);
   if (!timing) return { text: event.locationName, available: true };
   const { end, posted } = timing;

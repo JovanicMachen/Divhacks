@@ -69,7 +69,16 @@ export interface CampusEvent {
   createdAt?: string;
   /** Cover photo URL, when the host added one. */
   imageUrl?: string | null;
+  /** `abandoned` once the organizer cancels it; the row is kept, not deleted. */
+  status: EventStatus;
+  /** When the organizer cancelled it (database clock). */
+  abandonedAt?: string | null;
+  /** Organizer message pinned to the top of the event chat. */
+  pinnedMessageId?: string | null;
 }
+
+/** Stored lifecycle. Ended is derived from end_time, so the app only reads `active` and `abandoned`. */
+export type EventStatus = "active" | "abandoned" | "ended";
 
 /** Sidebar selection: a category, every event, or the user's saved events. */
 export type SidebarFilter = "all" | "saved" | EventCategory;

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bookmark,
   CalendarDays,
+  CalendarX2,
   Check,
   ChevronRight,
   Clock,
@@ -21,12 +22,16 @@ import {
 import { AvatarStack } from "./AvatarStack";
 import { CategoryHeroArt } from "./CategoryHeroArt";
 import { CountdownChip } from "./CountdownChip";
+import { EventChat } from "./EventChat";
+import { useAccount } from "@/components/account/AccountProvider";
 import { EventHeroArt } from "./EventHeroArt";
 import { CategoryGlyph, PeopleIcon } from "@/components/icons/CategoryIcons";
 import { MARKER_PALETTE } from "@/lib/constants";
 import { directionsUrl } from "@/lib/directions";
-import { useEventCountdown } from "@/lib/event-clock";
+import { useEventChat } from "@/lib/event-chat";
+import { isCancelled, useEventCountdown } from "@/lib/event-clock";
 import { useMediaQuery } from "@/lib/use-media-query";
+import { useUserEvents } from "@/lib/user-events";
 import { cn, formatCount } from "@/lib/utils";
 import type { CampusEvent } from "@/types/event";
 
@@ -42,7 +47,11 @@ interface EventDrawerProps {
   onShare: () => void;
   /** Only passed for the signed-in user's own student events. */
   onDelete?: () => void;
+  /** Only passed for the signed-in user's own student events that are still active. */
+  onCancelEvent?: () => void;
 }
+
+type DrawerTab = "details" | "chat";
 
 /**
  * Sliding detail panel for the selected event.
@@ -120,10 +129,37 @@ function DrawerCard({
   onToggleSaved,
   onShare,
   onDelete,
+  onCancelEvent,
 }: EventDrawerProps) {
   const palette = MARKER_PALETTE[event.markerColor];
   const goingCount = event.goingCount + (isGoing ? 1 : 0);
   const countdown = useEventCountdown(event);
+  const cancelled = isCancelled(event);
+  const { mode, user } = useAccount();
+  const { pinMessage } = useUserEvents();
+  const userId = user?.id ?? null;
+
+  // Tab and unread count belong to one event; switching events starts on Details.
+  const [view, setView] = useState<{ id: string; tab: DrawerTab }>({ id: event.id, tab: "details" });
+  const tab: DrawerTab = view.id === event.id ? view.tab : "details";
+  const [unread, setUnread] = useState<{ id: string; count: number }>({ id: event.id, count: 0 });
+  const unreadCount = unread.id === event.id ? unread.count : 0;
+  const onIncoming = useCallback(() => {
+    if (tab === "chat") return;
+    setUnread((prev) => ({ id: event.id, count: (prev.id === event.id ? prev.count : 0) + 1 }));
+  }, [tab, event.id]);
+  const chat = useEventChat(event.id, { remote: mode === "supabase", userId, onIncoming });
+  const openTab = (next: DrawerTab) => {
+    setView({ id: event.id, tab: next });
+    if (next === "chat") setUnread({ id: event.id, count: 0 });
+  };
+
+  const closedReason = cancelled
+    ? "This event was cancelled. Chat is now closed."
+    : countdown?.phase === "ended"
+      ? "This event has ended. Chat is now closed."
+      : null;
+  const isOrganizer = event.source === "student" && Boolean(userId) && event.createdBy === userId;
 
   return (
     <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[20px] bg-panel shadow-panel">
@@ -170,7 +206,7 @@ function DrawerCard({
             <button type="button" onClick={onShare} aria-label="Share event" className={HERO_BUTTON}>
               <Share2 size={15} strokeWidth={2.4} />
             </button>
-            {onDelete && <ManageMenu key={event.id} onDelete={onDelete} />}
+            {onDelete && <ManageMenu key={event.id} onDelete={onDelete} onCancelEvent={onCancelEvent} />}
             <button
               type="button"
               onClick={onClose}
@@ -183,6 +219,51 @@ function DrawerCard({
         </div>
       </div>
 
+      <div role="tablist" aria-label="Event sections" className="flex shrink-0 gap-1 border-b border-line px-[18px] pt-[6px]">
+        {(["details", "chat"] as const).map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => openTab(id)}
+            className={cn(
+              "relative flex h-[38px] items-center gap-1.5 px-2.5 text-[14px] font-bold transition-colors",
+              tab === id ? "text-brand" : "text-muted hover:text-ink",
+            )}
+          >
+            {id === "details" ? "Details" : "Chat"}
+            {id === "chat" && unreadCount > 0 && (
+              <span
+                aria-label={`${unreadCount} new`}
+                className="flex h-[18px] min-w-[18px] items-center justify-center gap-[3px] rounded-full bg-brand px-[6px] text-[11px] font-bold leading-none text-white"
+              >
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+            {tab === id && (
+              <motion.span layoutId="drawer-tab" className="absolute inset-x-1.5 -bottom-px h-[2.5px] rounded-full bg-brand" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === "chat" ? (
+        <div className="flex min-h-0 flex-1 flex-col max-tablet:h-[min(460px,calc(86vh-260px))] max-tablet:flex-none">
+          <EventChat
+            messages={chat.messages}
+            authors={chat.authors}
+            loaded={chat.loaded}
+            loadError={chat.error}
+            currentUserId={userId}
+            closedReason={closedReason}
+            send={chat.send}
+            remove={chat.remove}
+            onPin={isOrganizer ? (messageId) => pinMessage(event.id, messageId) : undefined}
+            pinnedMessageId={event.pinnedMessageId ?? null}
+          />
+        </div>
+      ) : (
       <AnimatePresence initial={false} mode="wait">
       <motion.div
         key={event.id}
@@ -228,7 +309,7 @@ function DrawerCard({
             <PersonStanding size={15} strokeWidth={2.3} aria-hidden />
             {event.distance}
           </span>
-          {countdown ? (
+          {countdown || cancelled ? (
             <CountdownChip event={event} size="md" />
           ) : (
             <span className="inline-flex h-[30px] items-center gap-[6px] rounded-full bg-coral-soft px-[11px] text-[13.5px] font-semibold text-coral-text">
@@ -280,6 +361,12 @@ function DrawerCard({
           </div>
         </div>
 
+        {cancelled ? (
+          <p className="mt-[21px] flex h-[42px] w-full items-center justify-center gap-[9px] rounded-[13px] bg-field text-[15px] font-bold text-muted">
+            <CalendarX2 size={17} strokeWidth={2.3} aria-hidden />
+            Cancelled by the organizer
+          </p>
+        ) : (
         <motion.button
           type="button"
           onClick={onToggleGoing}
@@ -297,6 +384,7 @@ function DrawerCard({
           </span>
           {isGoing ? "You're Going" : "I'm Going"}
         </motion.button>
+        )}
 
         <motion.a
           href={directionsUrl(event)}
@@ -324,7 +412,7 @@ function DrawerCard({
               {event.endTime ? (
                 <>
                   {event.startTime} – {event.endTime}{" "}
-                  <span className="font-semibold text-coral-text">({countdown?.label ?? event.timeStatus})</span>
+                  <span className="font-semibold text-coral-text">({cancelled ? "Cancelled" : (countdown?.label ?? event.timeStatus)})</span>
                 </>
               ) : (
                 event.startTime
@@ -345,12 +433,13 @@ function DrawerCard({
         </button>
       </motion.div>
       </AnimatePresence>
+      )}
     </div>
   );
 }
 
 /** Owner-only "•••" menu. Only actions that actually work are listed. */
-function ManageMenu({ onDelete }: { onDelete: () => void }) {
+function ManageMenu({ onDelete, onCancelEvent }: { onDelete: () => void; onCancelEvent?: () => void }) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -403,6 +492,20 @@ function ManageMenu({ onDelete }: { onDelete: () => void }) {
             transition={{ duration: 0.14, ease: "easeOut" }}
             className="absolute right-0 top-[calc(100%+8px)] z-10 w-[190px] origin-top-right rounded-[14px] border border-line bg-panel p-1.5 shadow-float"
           >
+            {onCancelEvent && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onCancelEvent();
+                }}
+                className="flex h-10 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[14px] font-semibold text-ink outline-none transition-colors hover:bg-field focus-visible:bg-field"
+              >
+                <CalendarX2 size={17} strokeWidth={2.2} aria-hidden />
+                Cancel Event
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
