@@ -21,8 +21,7 @@ export interface GeolocationState extends GeoResult {
 
 /**
  * Browser geolocation held in memory only — never sent anywhere or persisted.
- * The permission prompt only appears when a location-dependent control calls
- * `request()`; if permission was granted before, tracking starts on mount.
+ * Nothing is requested until a location-dependent control calls `request()`.
  */
 export function useGeolocation(): GeolocationState {
   const [status, setStatus] = useState<GeoStatus>("idle");
@@ -87,20 +86,6 @@ export function useGeolocation(): GeolocationState {
       );
     });
   }, [update]);
-
-  // Resume tracking when the browser already has permission; this never prompts.
-  useEffect(() => {
-    let cancelled = false;
-    navigator.permissions
-      ?.query({ name: "geolocation" })
-      .then((permission) => {
-        if (!cancelled && permission.state === "granted") void request();
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [request]);
 
   return { status, position, request };
 }
