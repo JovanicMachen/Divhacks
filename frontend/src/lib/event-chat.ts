@@ -27,7 +27,7 @@ export interface ChatAuthor {
 export const MESSAGE_MAX = 500;
 const HISTORY_LIMIT = 200;
 const COLUMNS = "id,event_id,user_id,message,created_at,edited_at,deleted_at";
-const CHAT_MIGRATION = "backend/supabase/migrations/20260927010000_event_status_and_chat.sql";
+const CHAT_MIGRATION = "backend/supabase/migrations/20260927050000_live_chat_compat.sql";
 const FALLBACK_NAME = "Columbia student";
 
 interface ChatBackend {

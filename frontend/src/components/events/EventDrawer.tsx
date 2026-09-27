@@ -203,7 +203,7 @@ function DrawerCard({
 
   const closedReason = cancelled
     ? "This event was cancelled. Chat is now closed."
-    : countdown?.phase === "ended"
+    : countdown?.phase === "ended" || event.status === "ended"
       ? "This event has ended. Chat is now closed."
       : null;
   const isOrganizer = event.source === "student" && Boolean(userId) && event.createdBy === userId;

@@ -30,9 +30,15 @@ export interface EventRow {
   created_at: string;
   /** Public URL of the cover photo; absent until the event photos migration runs. */
   image_url?: string | null;
-  /** Absent until 20260927010000_event_status_and_chat.sql runs; treated as active. */
-  status?: EventStatus | null;
+  /**
+   * The live database keeps an older status vocabulary (see
+   * campus_event_status_map), so any string can arrive here; toStatus maps it.
+   */
+  status?: string | null;
+  /** Cancellation time; the live table may use cancelled_at or canceled_at instead. */
   abandoned_at?: string | null;
+  cancelled_at?: string | null;
+  canceled_at?: string | null;
   pinned_message_id?: string | null;
   /** Absent until 20260927020000_rallies_organizations.sql runs; treated as a normal event. */
   event_type?: EventKind | null;
@@ -69,7 +75,23 @@ export type NewEventRow = Omit<
   end_time: string;
 };
 
-export const STATUS_MIGRATION = "backend/supabase/migrations/20260927010000_event_status_and_chat.sql";
+export const STATUS_MIGRATION = "backend/supabase/migrations/20260927050000_live_chat_compat.sql";
+
+const CANCELLED_STATUSES = new Set(["abandoned", "cancelled", "canceled"]);
+const CLOSED_STATUSES = new Set(["ended", "completed", "complete", "expired", "past", "closed", "finished", "archived"]);
+
+/** Cancellation time, whichever column the live table uses. */
+function cancelledAtOf(row: EventRow): string | null {
+  return row.abandoned_at ?? row.cancelled_at ?? row.canceled_at ?? null;
+}
+
+/** Maps any stored status (old or new vocabulary) onto the app's three states. */
+function toStatus(row: EventRow): EventStatus {
+  const status = (row.status ?? "").toLowerCase();
+  if (cancelledAtOf(row) || CANCELLED_STATUSES.has(status)) return "abandoned";
+  if (CLOSED_STATUSES.has(status)) return "ended";
+  return "active";
+}
 export const RALLY_MIGRATION = "backend/supabase/migrations/20260927020000_rallies_organizations.sql";
 
 /** How long an active Rally stays on the map (the database uses the same hour). */
@@ -180,7 +202,17 @@ export function createSupabaseEventsBackend(supabase: SupabaseClient): EventsBac
       await removeEventPhoto(supabase, deleted.created_by, deleted.id, deleted.image_url);
     },
     async cancel(id) {
-      // abandoned_at is set by the database; RLS limits this to the owner's student events.
+      // cancel_event() writes the cancelled value the live status constraint allows
+      // and the cancellation time; it checks ownership in the database.
+      const rpc = await supabase.rpc("cancel_event", { target: id });
+      if (!rpc.error) return rpc.data as EventRow;
+      const missing = rpc.error.code === "PGRST202" || rpc.error.code === "42883";
+      if (!missing) {
+        if (/already cancelled/i.test(rpc.error.message)) throw new Error("This event was already cancelled.");
+        if (rpc.error.code === "42501") throw new Error("This event couldn't be cancelled. Only its host can cancel it.");
+        throw describe(rpc.error, "cancel");
+      }
+      // Databases set up before cancel_event() existed.
       const { data, error } = await supabase
         .from("events")
         .update({ status: "abandoned" })
@@ -355,7 +387,7 @@ export function createLocalEventsBackend(): EventsBackend {
     const now = Date.now();
     const open =
       target?.event_type === "rally" &&
-      (target.status ?? "active") === "active" &&
+      toStatus(target) === "active" &&
       ((target.rally_status === "forming" && Date.parse(target.rally_expires_at ?? "") > now) ||
         (target.rally_status === "active" && Date.parse(target.end_time ?? "") > now));
     if (!open) throw new Error("This Rally isn't taking new people anymore.");
@@ -447,7 +479,7 @@ export function createLocalEventsBackend(): EventsBackend {
       const target = rows.find((row) => row.id === id);
       if (!target || target.source !== "student" || target.created_by !== currentUserId())
         throw new Error("This event couldn't be cancelled. Only its host can cancel it.");
-      if ((target.status ?? "active") !== "active") throw new Error("This event was already cancelled.");
+      if (toStatus(target) !== "active") throw new Error("This event was already cancelled.");
       const next: EventRow = { ...target, status: "abandoned", abandoned_at: new Date().toISOString() };
       write(
         rows.map((row) => (row.id === id ? next : row)),
@@ -599,8 +631,8 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     endsAt: row.end_time ?? undefined,
     createdAt: row.created_at,
     imageUrl: row.image_url ?? null,
-    status: row.status === "abandoned" ? "abandoned" : "active",
-    abandonedAt: row.abandoned_at ?? null,
+    status: toStatus(row),
+    abandonedAt: cancelledAtOf(row),
     pinnedMessageId: row.pinned_message_id ?? null,
     kind: row.event_type === "rally" ? "rally" : "event",
     rally:

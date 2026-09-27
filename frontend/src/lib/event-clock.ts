@@ -94,7 +94,7 @@ export function isCancelled(event: Pick<CampusEvent, "status">): boolean {
 
 /** Cancelled or past its end: kept for history, but off the live map, lists and counts. */
 export function isOffLiveMap(event: CampusEvent, now: number): boolean {
-  return isCancelled(event) || event.rally?.status === "expired" || hasEnded(event, now);
+  return isCancelled(event) || event.status === "ended" || event.rally?.status === "expired" || hasEnded(event, now);
 }
 
 /** The countdown label for timed events, the listing's own status otherwise. */
