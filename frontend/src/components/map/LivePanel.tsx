@@ -85,7 +85,8 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
   const cards = live.filter((event) => matchesLiveFilter(event, filter));
   const freeFood = counts.byCategory.get("Free Food") ?? 0;
 
-  const collapsedY = Math.max(0, height - PEEK);
+  // The sheet floats 8px above the edge; drop it by that much so only the bar shows.
+  const collapsedY = Math.max(0, height - PEEK + 8);
   const spring = reduceMotion ? { duration: 0 } : { type: "spring" as const, stiffness: 380, damping: 38 };
 
   return (

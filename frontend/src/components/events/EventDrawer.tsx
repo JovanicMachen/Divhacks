@@ -362,9 +362,11 @@ function DrawerCard({
         </div>
 
 
-        <p className="mt-[18px] text-[15px] leading-[21px] text-ink-soft">
-          <Emphasized text={event.description} emphasis={event.emphasis} />
-        </p>
+        {event.description && (
+          <p className="mt-[18px] text-[15px] leading-[21px] text-ink-soft">
+            <Emphasized text={event.description} emphasis={event.emphasis} />
+          </p>
+        )}
 
         {event.rally ? (
           <RallyPanel event={event} joined={joinedRallies.has(event.id)} onJoin={() => joinRally(event.id)} />

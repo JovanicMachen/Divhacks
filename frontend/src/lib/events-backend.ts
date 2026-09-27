@@ -536,7 +536,7 @@ export function rowToEvent(row: EventRow, now: Date = new Date()): CampusEvent {
     category: row.category,
     locationName: row.location_name || place?.name || "Pinned location",
     address: place?.address ?? (row.location_name || "Pinned on the campus map"),
-    description: row.description || "No description provided.",
+    description: row.description || (row.event_type === "rally" ? "" : "No description provided."),
     locationId: place?.id ?? null,
     mapX: point?.x ?? null,
     mapY: point?.y ?? null,

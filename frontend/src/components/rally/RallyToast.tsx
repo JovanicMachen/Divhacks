@@ -23,13 +23,14 @@ function Card({ rally, onView, onDismiss }: { rally: CampusEvent; onView: (event
   const reduceMotion = useReducedMotion();
   const needed = Math.max(0, info.minParticipants - info.participantCount);
   return (
+    // Centred by the wrapper; the motion layer owns its own transform.
+    <div className="absolute left-1/2 top-[112px] z-30 w-[min(360px,calc(100%-24px))] -translate-x-1/2 tablet:top-[72px]">
     <motion.div
       role="status"
       initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -14, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
       transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
-      className="absolute left-1/2 top-[112px] z-30 w-[min(360px,calc(100%-24px))] -translate-x-1/2 tablet:top-[72px]"
     >
       <div className="flex items-start gap-3 rounded-[18px] p-3.5 text-white shadow-[0_12px_32px_rgba(15,37,71,0.32)]" style={{ backgroundColor: RALLY_NAVY }}>
         <span className="relative mt-[2px] grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10">
@@ -62,5 +63,6 @@ function Card({ rally, onView, onDismiss }: { rally: CampusEvent; onView: (event
         </button>
       </div>
     </motion.div>
+    </div>
   );
 }

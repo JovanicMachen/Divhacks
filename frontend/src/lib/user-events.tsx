@@ -151,11 +151,27 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (!backend || !userId) return;
     let active = true;
+    // Rallies already on the map when this tab opens aren't announced; later ones are, once.
+    let first = true;
+    const announce = (rows: EventRow[]) => {
+      const candidates = rows.filter(
+        (row) => row.event_type === "rally" && row.rally_status === "forming" && row.created_by !== userId,
+      );
+      const fresh = new Set(markRalliesSeen(candidates.map((row) => row.id)));
+      candidates
+        .filter((row) => fresh.has(row.id))
+        .forEach((row) => {
+          const event = rowToEvent(row);
+          newRallyListeners.forEach((listener) => listener(event));
+        });
+    };
     const reload = () =>
       backend.list().then(
         (rows) => {
           if (!active) return;
-          markRalliesSeen(rows.filter((row) => row.event_type === "rally").map((row) => row.id));
+          if (first) markRalliesSeen(rows.filter((row) => row.event_type === "rally").map((row) => row.id));
+          else announce(rows);
+          first = false;
           setLoaded({ userId, rows, error: null });
         },
         (error: Error) => {
@@ -170,16 +186,7 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
         return;
       }
       if (change.type === "delete") remoteDeleteListeners.forEach((listener) => listener(change.id));
-      if (
-        change.type === "upsert" &&
-        change.row.event_type === "rally" &&
-        change.row.rally_status === "forming" &&
-        change.row.created_by !== userId &&
-        markRalliesSeen([change.row.id]).length > 0
-      ) {
-        const event = rowToEvent(change.row);
-        newRallyListeners.forEach((listener) => listener(event));
-      }
+      if (change.type === "upsert") announce([change.row]);
       setLoaded((prev) => (prev && prev.userId === userId ? { ...prev, rows: applyChange(prev.rows, change) } : prev));
     });
     return () => {
@@ -236,6 +243,12 @@ export function UserEventsProvider({ children }: { children: React.ReactNode }) 
       if (!backend || !userId) return { error: "You need to be signed in to post an event." };
       try {
         const stored = await backend.insert(row, photo);
+        // The database adds a Rally's creator as its first participant.
+        if (stored.event_type === "rally")
+          setJoined((prev) => ({
+            userId,
+            ids: new Set([...(prev && prev.userId === userId ? prev.ids : []), stored.id]),
+          }));
         setLoaded((prev) =>
           prev && prev.userId === userId ? { ...prev, rows: applyChange(prev.rows, { type: "upsert", row: stored }) } : prev,
         );
