@@ -1,28 +1,29 @@
--- Campus Connect: upgrade an existing public.events / event_attendees /
--- saved_events to what the app needs.
+-- Campus Connect: upgrade the live public.events / event_attendees /
+-- saved_events to what the app needs, reusing the columns that already exist.
 --
--- Use this instead of 20260926200000_events_ownership.sql on a database that
--- already has an events table. It is safe to run again.
+-- Reused as they are (never recreated, renamed, or rewritten):
+--   start_time, end_time   (timestamptz)       event times
+--   latitude, longitude    (double precision)  real-world position
+--   id, created_by, title, category, description, location_name, map_x, map_y, created_at
 --
--- What it never does: drop, rename, or recreate a table or column; rewrite
--- existing values other than filling the new `source` column; loosen an
--- existing policy.
+-- Added only if missing: source, location_id, host_name.
 --
--- It stops before changing anything if public.events already has a column that
--- looks like the same idea as one it would add (for example start_time or
--- latitude), so no duplicate columns are created.
+-- Safe to run again. It never drops, renames, or loosens anything, and the only
+-- existing values it writes are the new `source` column's.
 
 begin;
 
 -- 1. Check the live table before touching it.
 do $$
 declare
+  duplicates text;
   similar_columns text;
+  wrong_types text;
   id_type text;
   owner_type text;
 begin
   if to_regclass('public.events') is null then
-    raise exception 'public.events does not exist. Run 20260926200000_events_ownership.sql instead of this file.';
+    raise exception 'public.events does not exist. Nothing was changed.';
   end if;
 
   select data_type into id_type
@@ -40,30 +41,49 @@ begin
       coalesce(owner_type, 'missing');
   end if;
 
+  -- The reused columns must have the types the app reads.
+  select string_agg(column_name || ' is ' || data_type, ', ' order by column_name) into wrong_types
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'events'
+     and ((column_name in ('start_time', 'end_time') and data_type <> 'timestamp with time zone')
+       or (column_name in ('latitude', 'longitude') and data_type <> 'double precision'));
+  if wrong_types is not null then
+    raise exception 'public.events has % (expected timestamptz times and double precision coordinates). Nothing was changed.',
+      wrong_types;
+  end if;
+
+  -- A second column for the same idea would make the app ambiguous.
+  select string_agg(column_name, ', ' order by column_name) into duplicates
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'events'
+     and column_name in ('starts_at', 'ends_at', 'lat', 'lng');
+  if duplicates is not null then
+    raise exception 'public.events has % as well as start_time / end_time / latitude / longitude. Nothing was changed; decide which to keep first.',
+      duplicates;
+  end if;
+
   select string_agg(column_name, ', ' order by column_name) into similar_columns
     from information_schema.columns
    where table_schema = 'public' and table_name = 'events'
      and column_name in (
-       'start_time', 'end_time', 'start_at', 'end_at', 'start_date', 'end_date',
-       'starts', 'ends', 'date', 'time', 'event_date', 'event_time', 'closes_at', 'expires_at',
-       'latitude', 'longitude', 'lon', 'long',
-       'is_official', 'official', 'event_source', 'event_type',
-       'host', 'organizer', 'building', 'building_id', 'location_key'
+       'is_official', 'official', 'event_source',
+       'host', 'organizer', 'host_display_name',
+       'building', 'building_id', 'location_key', 'place_id'
      );
   if similar_columns is not null then
-    raise exception 'public.events already has: %. These may mean the same thing as starts_at, ends_at, lat, lng, source, host_name or location_id. Nothing was changed; map these columns before running this file.',
+    raise exception 'public.events already has: %. These may mean the same thing as source, host_name or location_id. Nothing was changed; map these columns before running this file.',
       similar_columns;
   end if;
 end $$;
 
--- 2. Add the columns the app reads and writes. All nullable, so existing rows are untouched.
+-- 2. Columns the app needs. The reused ones are only added if a table somehow lacks them.
 alter table public.events
+  add column if not exists start_time timestamptz,
+  add column if not exists end_time timestamptz,
+  add column if not exists latitude double precision,
+  add column if not exists longitude double precision,
   add column if not exists source text,
-  add column if not exists starts_at timestamptz,
-  add column if not exists ends_at timestamptz,
   add column if not exists location_id text,
-  add column if not exists lat double precision,
-  add column if not exists lng double precision,
   add column if not exists host_name text;
 
 -- 3. Fill `source` for existing rows. Rows with an owner are student posts;
@@ -102,7 +122,7 @@ begin
   end if;
 end $$;
 
--- 5. Checks. Existing rows already satisfy both (source was just filled; the new time columns are empty).
+-- 5. Checks.
 do $$
 begin
   if not exists (select 1 from pg_constraint
@@ -110,14 +130,16 @@ begin
     alter table public.events
       add constraint events_source_check check (source in ('official', 'student'));
   end if;
+  -- NOT VALID: applies to new and edited rows; existing rows are not re-checked.
   if not exists (select 1 from pg_constraint
                   where conname = 'events_time_order' and conrelid = 'public.events'::regclass) then
     alter table public.events
-      add constraint events_time_order check (starts_at is null or ends_at is null or ends_at > starts_at);
+      add constraint events_time_order
+      check (start_time is null or end_time is null or end_time > start_time) not valid;
   end if;
 end $$;
 
-create index if not exists events_starts_at_idx on public.events (starts_at);
+create index if not exists events_start_time_idx on public.events (start_time);
 create index if not exists events_created_by_idx on public.events (created_by);
 
 -- 6. Row Level Security on events.
@@ -176,7 +198,7 @@ begin
   end if;
 end $$;
 
--- 7. Going (event_attendees) and Saved (saved_events): user-owned rows.
+-- 7. Going (event_attendees) and Saved (saved_events): user-owned rows. Existing rows are kept.
 do $$
 declare
   t text;
@@ -209,7 +231,6 @@ begin
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, delete on public.%I to authenticated', t);
 
-    -- Access policies, only where none exist for that action.
     if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = t
                     and permissive = 'PERMISSIVE' and cmd in ('SELECT', 'ALL')) then
       execute format('create policy "Users can read their own rows" on public.%I
@@ -226,7 +247,6 @@ begin
                         for delete to authenticated using (auth.uid() = user_id)', t);
     end if;
 
-    -- Ownership limits (restrictive: only narrow access).
     if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = t
                     and policyname = 'Only the owner can add this row') then
       execute format('create policy "Only the owner can add this row" on public.%I
@@ -244,7 +264,6 @@ begin
                         using (auth.uid() = user_id) with check (auth.uid() = user_id)', t);
     end if;
 
-    -- A user's saved list is private.
     if t = 'saved_events' and not exists (
       select 1 from pg_policies where schemaname = 'public' and tablename = t
          and policyname = 'Only the owner can see saved events') then
@@ -300,7 +319,7 @@ commit;
 select 'column' as kind, table_name as "table", column_name as name, data_type as detail
   from information_schema.columns
  where table_schema = 'public' and table_name = 'events'
-   and column_name in ('source', 'starts_at', 'ends_at', 'location_id', 'lat', 'lng', 'host_name', 'created_by')
+   and column_name in ('start_time', 'end_time', 'latitude', 'longitude', 'source', 'location_id', 'host_name', 'created_by')
 union all
 select 'policy', tablename, policyname, permissive || ' ' || cmd
   from pg_policies

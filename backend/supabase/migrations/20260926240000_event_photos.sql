@@ -1,5 +1,5 @@
 -- Campus Connect: optional cover photo on events.
--- Run after 20260926220000_events_live_schema_compat.sql. Additive and safe to
+-- Run after 20260926221000_events_live_schema_compat_v2.sql. Additive and safe to
 -- run again; it never drops, renames, or loosens anything.
 --
 -- Photos live in the existing public Storage bucket `event-images` under
@@ -20,7 +20,7 @@ begin
 
   if not exists (select 1 from information_schema.columns
                   where table_schema = 'public' and table_name = 'events' and column_name = 'source') then
-    raise exception 'public.events has no source column yet. Run 20260926220000_events_live_schema_compat.sql first. Nothing was changed.';
+    raise exception 'public.events has no source column yet. Run 20260926221000_events_live_schema_compat_v2.sql first. Nothing was changed.';
   end if;
 
   select data_type into id_type

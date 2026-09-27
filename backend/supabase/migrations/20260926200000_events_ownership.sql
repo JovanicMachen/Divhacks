@@ -1,6 +1,7 @@
 -- Campus Connect: student-posted events with ownership, plus Going / Saved.
 -- Only for a database with no events table. If events already exists, run
--- 20260926220000_events_live_schema_compat.sql instead.
+-- 20260926221000_events_live_schema_compat_v2.sql instead.
+-- Column names match the live database (start_time, end_time, latitude, longitude).
 -- Additive and re-runnable: nothing is dropped or renamed.
 --
 -- Rules enforced by Row Level Security:
@@ -22,11 +23,11 @@ create table if not exists public.events (
   location_id text,
   map_x double precision,
   map_y double precision,
-  lat double precision,
-  lng double precision,
+  latitude double precision,
+  longitude double precision,
   host_name text,
-  starts_at timestamptz not null,
-  ends_at timestamptz not null,
+  start_time timestamptz not null,
+  end_time timestamptz not null,
   created_at timestamptz not null default now()
 );
 
@@ -51,7 +52,7 @@ begin
   end if;
   if not exists (select 1 from pg_constraint where conname = 'events_time_order') then
     alter table public.events
-      add constraint events_time_order check (ends_at > starts_at);
+      add constraint events_time_order check (end_time > start_time);
   end if;
   if not exists (select 1 from pg_constraint where conname = 'events_map_point') then
     alter table public.events
@@ -61,7 +62,7 @@ begin
   end if;
 end $$;
 
-create index if not exists events_starts_at_idx on public.events (starts_at);
+create index if not exists events_start_time_idx on public.events (start_time);
 create index if not exists events_created_by_idx on public.events (created_by);
 
 alter table public.events enable row level security;
