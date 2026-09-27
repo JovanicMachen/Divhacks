@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Check, MapPin, TrendingUp, X } from "lucide-react";
 
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
+import { MobileSheet } from "@/components/mobile/MobileSheet";
 import { EVENT_CATEGORIES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { DateFilter, EventCategory, MapPill } from "@/types/event";
@@ -45,8 +46,6 @@ export function MobileFilterSheet({
   categoryFilter,
   onCategoryChange,
 }: MobileFilterSheetProps) {
-  const reduceMotion = useReducedMotion();
-
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -68,19 +67,19 @@ export function MobileFilterSheet({
             onClick={onClose}
             className="fixed inset-0 z-[70] bg-ink/25 tablet:hidden"
           />
-          <motion.div
+          <MobileSheet
             key="filters-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Filters"
-            initial={reduceMotion ? { opacity: 0 } : { y: "100%" }}
-            animate={reduceMotion ? { opacity: 1 } : { y: 0 }}
-            exit={reduceMotion ? { opacity: 0 } : { y: "100%" }}
-            transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
-            className="fixed inset-x-0 bottom-0 z-[71] max-h-[80vh] overflow-y-auto rounded-t-[22px] bg-panel px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_40px_rgba(15,37,71,0.18)] tablet:hidden"
+            label="Filters"
+            modal
+            dismissible
+            onDismiss={onClose}
+            initial="expanded"
+            peek={96}
+            mediumRatio={0.5}
+            expandedRatio={0.8}
+            className="fixed inset-x-0 bottom-0 z-[71] rounded-b-none pb-[max(12px,env(safe-area-inset-bottom))] tablet:hidden"
           >
-            <span aria-hidden className="mx-auto mb-3 block h-1 w-10 rounded-full bg-line-strong" />
-            <div className="flex items-center justify-between">
+            <div className="flex shrink-0 items-center justify-between px-5">
               <h2 className="text-[18px] font-extrabold tracking-[-0.01em] text-ink">Filters</h2>
               <button
                 type="button"
@@ -92,6 +91,7 @@ export function MobileFilterSheet({
               </button>
             </div>
 
+            <div data-sheet-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-none px-5 pb-4">
             <p className="mb-2 mt-4 text-[12px] font-bold uppercase tracking-[0.06em] text-faint">Sort</p>
             <div role="radiogroup" aria-label="Sort" className="grid grid-cols-2 gap-2">
               {(
@@ -180,7 +180,8 @@ export function MobileFilterSheet({
                 Show results
               </button>
             </div>
-          </motion.div>
+            </div>
+          </MobileSheet>
         </>
       )}
     </AnimatePresence>

@@ -203,6 +203,18 @@ body {
   display: none;
 }
 
+/* While a finger is on a sheet, the page behind it does not rubber-band. */
+html.cc-sheet-gesture,
+html.cc-sheet-gesture body {
+  overscroll-behavior: none;
+}
+
+.cc-sheet [data-sheet-scroll] {
+  touch-action: pan-y;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
 .cc-chip-row > * > * {
   scroll-snap-align: start;
 }

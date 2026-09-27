@@ -1,11 +1,12 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useDragControls, useReducedMotion } from "framer-motion";
+import { useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronUp, Radar } from "lucide-react";
 
 import { CountdownChip } from "@/components/events/CountdownChip";
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
+import { MobileSheet, type MobileSheetHandle, type SheetDetent } from "@/components/mobile/MobileSheet";
 import type { LiveFilter } from "./MobileCategoryChips";
 import { useLifecycleNow } from "@/lib/event-clock";
 import { isHappeningNow } from "@/lib/use-campus-state";
@@ -13,10 +14,8 @@ import { useDragScroll } from "@/lib/use-drag-scroll";
 import { cn } from "@/lib/utils";
 import type { CampusEvent, EventCategory } from "@/types/event";
 
-/** Height of the collapsed bar that stays above the bottom edge. */
-const PEEK = 64;
-const SWIPE_DISTANCE = 36;
-const SWIPE_VELOCITY = 320;
+/** Height of the collapsed bar that stays above the bottom edge, including the drag handle. */
+const PEEK = 86;
 
 const FILTERS: Array<{ id: LiveFilter; label: string }> = [
   { id: "all", label: "All" },
@@ -51,24 +50,12 @@ interface LivePanelProps {
  * from the events currently loaded, so realtime changes update it.
  */
 export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LivePanelProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [height, setHeight] = useState(0);
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const dragged = useRef(false);
-  const controls = useDragControls();
+  const [detent, setDetent] = useState<SheetDetent>("peek");
+  const sheetRef = useRef<MobileSheetHandle>(null);
   const reduceMotion = useReducedMotion();
   const filterRow = useDragScroll<HTMLDivElement>();
   const now = useLifecycleNow(events);
-
-  useLayoutEffect(() => {
-    const el = sheetRef.current;
-    if (!el) return;
-    const measure = () => setHeight(el.offsetHeight);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const open = detent !== "peek";
 
   const live = useMemo(
     () =>
@@ -84,14 +71,16 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
   }, [live]);
   const cards = live.filter((event) => matchesLiveFilter(event, filter));
 
-  // The sheet floats 8px above the edge; drop it by that much so only the bar shows.
-  const collapsedY = Math.max(0, height - PEEK + 8);
-  const spring = reduceMotion ? { duration: 0 } : { type: "spring" as const, stiffness: 380, damping: 38 };
+  const cycle = () => {
+    const order: SheetDetent[] = ["peek", "medium", "expanded"];
+    const next = order[(order.indexOf(detent) + 1) % order.length];
+    sheetRef.current?.snap(next);
+  };
 
   return (
     <>
       <AnimatePresence>
-        {expanded && (
+        {open && (
           <motion.button
             key="live-backdrop"
             type="button"
@@ -99,51 +88,29 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setExpanded(false)}
+            onClick={() => sheetRef.current?.snap("peek")}
             className="absolute inset-0 z-[29] bg-ink/20 tablet:hidden"
           />
         )}
       </AnimatePresence>
-      <motion.section
+      <MobileSheet
         ref={sheetRef}
-        aria-label="Campus live"
-        drag="y"
-        dragListener={false}
-        dragControls={controls}
-        dragConstraints={{ top: 0, bottom: collapsedY }}
-        dragElastic={0.06}
-        dragMomentum={false}
-        initial={false}
-        animate={{ y: expanded ? 0 : collapsedY, opacity: height ? 1 : 0 }}
-        transition={spring}
-        onDragStart={() => {
-          dragged.current = true;
-        }}
-        onDragEnd={(_, info) => {
-          if (info.offset.y < -SWIPE_DISTANCE || info.velocity.y < -SWIPE_VELOCITY) setExpanded(true);
-          else if (info.offset.y > SWIPE_DISTANCE || info.velocity.y > SWIPE_VELOCITY) setExpanded(false);
-          else setExpanded((open) => open);
-        }}
-        className="absolute inset-x-2 bottom-2 z-30 flex h-[min(72vh,600px)] flex-col overflow-hidden rounded-[22px] bg-panel shadow-[0_-4px_24px_rgba(15,37,71,0.14),0_12px_28px_rgba(15,37,71,0.12)] tablet:hidden"
+        label="Campus live"
+        initial="peek"
+        peek={PEEK}
+        mediumRatio={0.46}
+        expandedRatio={0.72}
+        maxHeight={600}
+        enter={false}
+        onDetentChange={setDetent}
+        className="absolute inset-x-2 bottom-2 z-30 shadow-[0_-4px_24px_rgba(15,37,71,0.14),0_12px_28px_rgba(15,37,71,0.12)] tablet:hidden"
       >
         <button
           type="button"
-          aria-expanded={expanded}
-          onPointerDown={(e) => {
-            dragged.current = false;
-            controls.start(e);
-          }}
-          onClick={() => {
-            if (dragged.current) {
-              dragged.current = false;
-              return;
-            }
-            setExpanded((open) => !open);
-          }}
-          style={{ touchAction: "none" }}
-          className="flex h-[64px] w-full shrink-0 flex-col items-center justify-center px-4 text-left"
+          aria-expanded={open}
+          onClick={cycle}
+          className="flex h-[58px] w-full shrink-0 items-center px-4 text-left"
         >
-          <span aria-hidden className="mb-[7px] block h-1 w-9 rounded-full bg-line-strong" />
           {/* Counted from the loaded events: live now, still on the map, and Rallies. */}
           <span className="flex w-full min-w-0 items-center gap-2 whitespace-nowrap text-[13.5px] font-bold text-ink">
             <span className="flex items-center gap-1.5">
@@ -163,12 +130,12 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
               size={18}
               strokeWidth={2.4}
               aria-hidden
-              className={cn("ml-auto text-faint transition-transform duration-300", expanded && "rotate-180")}
+              className={cn("ml-auto text-faint transition-transform duration-300", open && "rotate-180")}
             />
           </span>
         </button>
 
-        <div className="flex min-h-0 flex-1 flex-col" aria-hidden={!expanded} inert={!expanded || undefined}>
+        <div className="flex min-h-0 flex-1 flex-col" aria-hidden={!open} inert={!open || undefined}>
           <div className="shrink-0 px-5">
             <p className="text-[11.5px] font-extrabold uppercase tracking-[0.14em] text-faint">Campus live</p>
             <p className="mt-[2px] text-[20px] font-extrabold tracking-[-0.02em] text-ink">
@@ -224,7 +191,7 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
           </div>
 
           <p className="mt-3 shrink-0 px-5 text-[13px] font-extrabold text-ink">Happening now</p>
-          <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-4 pt-2">
+          <ul data-sheet-scroll="" className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-none px-3 pb-4 pt-2">
             {cards.length === 0 ? (
               <li className="px-3 py-6 text-center text-[13.5px] font-medium text-muted">Nothing live for this filter right now.</li>
             ) : (
@@ -233,7 +200,7 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
                   <button
                     type="button"
                     onClick={() => {
-                      setExpanded(false);
+                      sheetRef.current?.snap("peek");
                       onOpenEvent(event);
                     }}
                     className="flex w-full items-center gap-3 rounded-[14px] border border-line bg-panel p-2.5 text-left transition-colors active:bg-brand-tint"
@@ -266,7 +233,7 @@ export function LivePanel({ events, filter, onFilterChange, onOpenEvent }: LiveP
             )}
           </ul>
         </div>
-      </motion.section>
+      </MobileSheet>
     </>
   );
 }

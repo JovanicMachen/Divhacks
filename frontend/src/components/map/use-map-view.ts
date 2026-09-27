@@ -226,7 +226,7 @@ export function useMapView(onTap?: (point: MapPoint) => void): MapView {
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    if ((e.target as HTMLElement).closest("button, a, input")) return;
+    if ((e.target as HTMLElement).closest("button, a, input, textarea, [data-mobile-sheet]")) return;
     stop();
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });

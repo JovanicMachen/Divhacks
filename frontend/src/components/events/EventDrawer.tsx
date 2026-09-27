@@ -26,6 +26,7 @@ import { AvatarStack } from "./AvatarStack";
 import { CategoryHeroArt } from "./CategoryHeroArt";
 import { CountdownChip } from "./CountdownChip";
 import { EventChat, type ChatLock } from "./EventChat";
+import { MobileSheet } from "@/components/mobile/MobileSheet";
 import { RallyPanel } from "@/components/rally/RallyPanel";
 import { useAccount } from "@/components/account/AccountProvider";
 import { EventHeroArt } from "./EventHeroArt";
@@ -135,17 +136,20 @@ function DrawerSheet(props: EventDrawerProps) {
   const view = useVisualViewport();
   const keyboard = Boolean(view && view.inset > 80);
   return (
-    <motion.aside
-      aria-label={`${props.event.title} details`}
-      initial={{ y: "100%" }}
-      animate={{ y: 0 }}
-      exit={{ y: "100%" }}
-      transition={{ duration: 0.28, ease: OPEN_EASE }}
-      className="fixed inset-x-0 bottom-0 z-40 max-h-[86vh] px-2 pb-2 has-[[data-drawer-tab=chat]]:h-[86dvh]"
-      style={view ? { bottom: view.inset, maxHeight: Math.min(view.height * 0.94, view.height - 8) } : undefined}
+    <MobileSheet
+      label={`${props.event.title} details`}
+      className="fixed inset-x-2 bottom-2 z-40"
+      initial="expanded"
+      peek={132}
+      mediumRatio={0.56}
+      expandedRatio={0.9}
+      dismissible
+      onDismiss={props.onClose}
+      locked={keyboard}
+      bottomInset={view?.inset ?? 0}
     >
-      <DrawerCard {...props} compactHero={keyboard} />
-    </motion.aside>
+      <DrawerCard {...props} framed={false} compactHero={keyboard} />
+    </MobileSheet>
   );
 }
 
@@ -177,7 +181,8 @@ function DrawerCard({
   onCancelEvent,
   onAdminAction,
   compactHero = false,
-}: EventDrawerProps & { compactHero?: boolean }) {
+  framed = true,
+}: EventDrawerProps & { compactHero?: boolean; framed?: boolean }) {
   const palette = MARKER_PALETTE[event.markerColor];
   const goingCount = event.goingCount + (isGoing ? 1 : 0);
   const countdown = useEventCountdown(event);
@@ -230,8 +235,13 @@ function DrawerCard({
           };
 
   return (
-    <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[20px] bg-panel shadow-panel">
-      <div className="shrink-0 p-[12px] pb-0">
+    <div
+      className={cn(
+        "flex h-full max-h-full flex-col overflow-hidden",
+        framed && "rounded-[20px] bg-panel shadow-panel",
+      )}
+    >
+      <div className={cn("shrink-0 pb-0", framed ? "p-[12px]" : "px-[12px] pt-1")}>
         <div
           className={cn(
             "relative overflow-hidden rounded-[16px] bg-[#D8CEC0] transition-[height] duration-200",
@@ -348,7 +358,8 @@ function DrawerCard({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
-        className="min-h-0 flex-1 overflow-y-auto px-[26px] pb-[18px] pt-[14px] scrollbar-none"
+        data-sheet-scroll=""
+        className="min-h-0 flex-1 overflow-y-auto overscroll-none px-[26px] pb-[18px] pt-[14px] scrollbar-none"
       >
         <span
           className="inline-flex h-[26px] items-center gap-[5px] rounded-full px-[10px] text-[13px] font-semibold"

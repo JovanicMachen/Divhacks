@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+
+import { MobileSheet } from "@/components/mobile/MobileSheet";
 import {
   Bell,
   BellRing,
@@ -154,74 +156,131 @@ export function NotificationCenter({ onOpenEvent }: NotificationCenterProps) {
                 className="fixed inset-0 bg-ink/30"
               />
             )}
+            {isSheet ? (
+              <MobileSheet
+                key="panel"
+                nodeRef={panelRef}
+                id={panelId}
+                label="Notifications"
+                modal
+                dismissible
+                onDismiss={() => close()}
+                initial="expanded"
+                peek={120}
+                mediumRatio={0.55}
+                expandedRatio={0.86}
+                className="fixed inset-x-0 bottom-0 z-[60] rounded-b-none pb-[max(8px,env(safe-area-inset-bottom))]"
+              >
+                <NoticeBody
+                  rows={rows}
+                  byId={byId}
+                  now={now}
+                  unreadCount={unreadCount}
+                  storage={storage}
+                  onOpen={openNotification}
+                  onMarkRead={markRead}
+                  onMarkAllRead={markAllRead}
+                />
+              </MobileSheet>
+            ) : (
             <motion.div
               key="panel"
               ref={panelRef}
               id={panelId}
               role="dialog"
               aria-label="Notifications"
-              initial={isSheet ? { y: "100%" } : { opacity: 0, y: -6, scale: 0.98 }}
-              animate={isSheet ? { y: 0 } : { opacity: 1, y: 0, scale: 1 }}
-              exit={isSheet ? { y: "100%" } : { opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ duration: isSheet ? 0.26 : 0.16, ease: [0.32, 0.72, 0, 1] }}
-              className={cn(
-                "flex flex-col bg-panel",
-                isSheet
-                  ? "fixed inset-x-0 bottom-0 max-h-[88vh] rounded-t-[22px] pb-[max(8px,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(15,37,71,0.18)]"
-                  : "absolute right-0 top-[calc(100%+10px)] max-h-[min(560px,calc(100vh-96px))] w-[380px] origin-top-right rounded-[18px] border border-line shadow-float",
-              )}
+              initial={{ opacity: 0, y: -6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
+              className="absolute right-0 top-[calc(100%+10px)] flex max-h-[min(560px,calc(100vh-96px))] w-[380px] origin-top-right flex-col rounded-[18px] border border-line bg-panel shadow-float"
             >
-              {isSheet && <span aria-hidden className="mx-auto mt-2 block h-1 w-10 shrink-0 rounded-full bg-line-strong" />}
-              <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2.5 pt-3.5">
-                <h2 className="text-[17px] font-extrabold tracking-[-0.01em] text-ink">Notifications</h2>
-                <button
-                  type="button"
-                  onClick={markAllRead}
-                  disabled={unreadCount === 0}
-                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[13px] font-bold text-brand transition-colors hover:bg-brand-tint disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent"
-                >
-                  <CheckCheck size={15} strokeWidth={2.4} aria-hidden />
-                  Mark all as read
-                </button>
-              </div>
-
-              {rows.length === 0 ? (
-                <div className="flex flex-col items-center px-6 pb-10 pt-8 text-center">
-                  <span className="grid h-12 w-12 place-items-center rounded-full bg-brand-tint text-brand">
-                    <Bell size={22} strokeWidth={2.1} aria-hidden />
-                  </span>
-                  <p className="mt-3 text-[15.5px] font-bold text-ink">You&apos;re all caught up</p>
-                  <p className="mt-1 text-[13.5px] font-medium text-muted">New campus activity will appear here.</p>
-                </div>
-              ) : (
-                <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 scrollbar-none">
-                  <AnimatePresence initial={false}>
-                    {rows.map((row) => (
-                      <NotificationItem
-                        key={row.id}
-                        row={row}
-                        event={row.event_id ? byId.get(row.event_id) : undefined}
-                        now={now}
-                        onOpen={() => openNotification(row)}
-                        onMarkRead={() => markRead(row.id)}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </ul>
-              )}
-
-              {storage !== "database" && (
-                <p className="shrink-0 border-t border-line px-4 py-2.5 text-[12px] font-medium leading-[1.4] text-faint">
-                  {storage === "browser"
-                    ? "Local preview: notifications are kept in this browser."
-                    : "Notifications aren't saved yet. Run the notifications migration to keep them across devices."}
-                </p>
-              )}
+              <NoticeBody
+                rows={rows}
+                byId={byId}
+                now={now}
+                unreadCount={unreadCount}
+                storage={storage}
+                onOpen={openNotification}
+                onMarkRead={markRead}
+                onMarkAllRead={markAllRead}
+              />
             </motion.div>
+            )}
           </>
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function NoticeBody({
+  rows,
+  byId,
+  now,
+  unreadCount,
+  storage,
+  onOpen,
+  onMarkRead,
+  onMarkAllRead,
+}: {
+  rows: NotificationRow[];
+  byId: Map<string, CampusEvent>;
+  now: number;
+  unreadCount: number;
+  storage: "database" | "browser" | "session";
+  onOpen: (row: NotificationRow) => void;
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
+}) {
+  return (
+    <>
+      <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2.5 pt-3.5">
+        <h2 className="text-[17px] font-extrabold tracking-[-0.01em] text-ink">Notifications</h2>
+        <button
+          type="button"
+          onClick={onMarkAllRead}
+          disabled={unreadCount === 0}
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[13px] font-bold text-brand transition-colors hover:bg-brand-tint disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent"
+        >
+          <CheckCheck size={15} strokeWidth={2.4} aria-hidden />
+          Mark all as read
+        </button>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="flex flex-col items-center px-6 pb-10 pt-8 text-center">
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-brand-tint text-brand">
+            <Bell size={22} strokeWidth={2.1} aria-hidden />
+          </span>
+          <p className="mt-3 text-[15.5px] font-bold text-ink">You&apos;re all caught up</p>
+          <p className="mt-1 text-[13.5px] font-medium text-muted">New campus activity will appear here.</p>
+        </div>
+      ) : (
+        <ul data-sheet-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-none px-2 pb-2 scrollbar-none">
+          <AnimatePresence initial={false}>
+            {rows.map((row) => (
+              <NotificationItem
+                key={row.id}
+                row={row}
+                event={row.event_id ? byId.get(row.event_id) : undefined}
+                now={now}
+                onOpen={() => onOpen(row)}
+                onMarkRead={() => onMarkRead(row.id)}
+              />
+            ))}
+          </AnimatePresence>
+        </ul>
+      )}
+
+      {storage !== "database" && (
+        <p className="shrink-0 border-t border-line px-4 py-2.5 text-[12px] font-medium leading-[1.4] text-faint">
+          {storage === "browser"
+            ? "Local preview: notifications are kept in this browser."
+            : "Notifications aren't saved yet. Run the notifications migration to keep them across devices."}
+        </p>
+      )}
+    </>
   );
 }
 

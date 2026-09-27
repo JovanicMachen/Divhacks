@@ -202,7 +202,8 @@ export function EventChat({
             atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
             if (atBottom.current && unseen) setUnseen(0);
           }}
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-[18px] py-3 scrollbar-none"
+          data-sheet-scroll=""
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-none px-[18px] py-3 scrollbar-none"
         >
           {!loaded && <ChatSkeleton />}
           {loaded && loadError && (

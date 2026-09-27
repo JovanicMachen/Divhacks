@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUp, X } from "lucide-react";
 
+import { MobileSheet } from "@/components/mobile/MobileSheet";
 import { GeminiSparkle } from "./GeminiSparkle";
 import { answerCampusQuestion, fetchGeminiReply } from "./ask-gemini";
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
@@ -11,7 +12,6 @@ import { useCampusFeedback } from "@/lib/campus-feedback";
 import { useMediaQuery } from "@/lib/use-media-query";
 import type { CampusEvent } from "@/types/event";
 
-const OPEN_EASE = [0.32, 0.72, 0, 1] as const;
 const SUGGESTIONS = ["What's happening now?", "Where's free food?", "How do I post an event?"];
 
 interface Message {
@@ -159,7 +159,7 @@ export function AskGeminiPanel({
         </button>
       </header>
 
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5 scrollbar-none">
+      <div ref={listRef} data-sheet-scroll="" className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-none px-4 py-3.5 scrollbar-none">
         {messages.map((message) => (
           <div key={message.id} className={message.role === "user" ? "flex justify-end" : ""}>
             <div
@@ -308,19 +308,20 @@ export function AskGeminiPanel({
         />
       )}
       {open && (
-        <motion.div
+        <MobileSheet
           key="ask-gemini"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          initial={{ y: "100%" }}
-          animate={{ y: 0 }}
-          exit={{ y: "100%" }}
-          transition={{ duration: 0.24, ease: OPEN_EASE }}
-          className="fixed inset-x-2 bottom-2 z-[70] flex max-h-[82vh] flex-col overflow-hidden rounded-[20px] shadow-float"
+          label="Ask Gemini"
+          modal
+          dismissible
+          onDismiss={onClose}
+          initial="expanded"
+          peek={96}
+          mediumRatio={0.5}
+          expandedRatio={0.82}
+          className="fixed inset-x-2 bottom-2 z-[70] shadow-float"
         >
           {body}
-        </motion.div>
+        </MobileSheet>
       )}
     </AnimatePresence>
   );
