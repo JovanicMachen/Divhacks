@@ -10,6 +10,7 @@ import {
   type NotificationRow,
   type NotificationsBackend,
 } from "./notifications-backend";
+import { useLifecycleNow } from "./event-clock";
 import { smartNotifications } from "./smart-notifications";
 import { getSupabase } from "./supabase/client";
 import { useUserEvents } from "./user-events";
@@ -55,7 +56,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const userId = user?.id ?? null;
   const { events, ready, going, saved, myEvents } = useUserEvents();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [tickNow, setNow] = useState(() => Date.now());
+  // Also step forward the moment any event starts or ends, so "starting now" isn't a minute late.
+  const lifecycleNow = useLifecycleNow(events);
+  const now = Math.max(tickNow, lifecycleNow);
   const attempted = useRef(new Set<string>());
 
   useEffect(() => {

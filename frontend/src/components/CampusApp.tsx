@@ -316,7 +316,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
               layout="sheet"
               open={geminiOpen}
               onClose={() => setGeminiOpen(false)}
-              events={state.events}
+              events={state.liveEvents}
               selectedEvent={selected}
               onSelectEvent={(event) => {
                 state.selectEvent(event.id);
@@ -334,7 +334,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
               layout="dock"
               open
               onClose={() => setGeminiOpen(false)}
-              events={state.events}
+              events={state.liveEvents}
               selectedEvent={selected}
               onSelectEvent={(event) => {
                 state.selectEvent(event.id);

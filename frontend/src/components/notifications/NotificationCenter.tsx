@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { CountdownChip } from "@/components/events/CountdownChip";
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useNotifications } from "@/lib/notifications";
@@ -268,6 +269,7 @@ function NotificationItem({ row, event, now, onOpen, onMarkRead }: ItemProps) {
             {row.title}
           </span>
           {event && <span className="mt-[2px] block truncate text-[13px] font-semibold text-ink-soft">{event.title}</span>}
+          {event && <CountdownChip event={event} hideEnded className="mt-[5px]" />}
           <span className={cn("mt-[2px] block text-[12.5px] font-medium", status.available ? "text-muted" : "text-faint")}>
             {status.text} · {ageLabel(row.created_at, now)}
           </span>

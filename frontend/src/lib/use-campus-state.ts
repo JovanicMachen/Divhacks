@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { eventWindow, hasEnded, phaseAt, useLifecycleNow } from "./event-clock";
 import { mapToGeo, type MapPoint } from "./geo";
 import { useUserEvents } from "./user-events";
 import { FEATURED_EVENT_ID } from "@/data/mock-events";
@@ -38,8 +39,9 @@ export function eventPoint(event: CampusEvent): MapPoint | null {
 }
 
 /** Currently running: official listings say so in their status, student events by their times. */
-export function isHappeningNow(event: CampusEvent, now: Date = new Date()): boolean {
-  if (event.startsAt && event.endsAt) return new Date(event.startsAt) <= now && now < new Date(event.endsAt);
+export function isHappeningNow(event: CampusEvent, now: number = Date.now()): boolean {
+  const span = eventWindow(event);
+  if (span) return phaseAt(span, now) === "live";
   return event.timeStatus === "Happening now" || event.timeStatus.startsWith("Ends in");
 }
 
@@ -90,9 +92,14 @@ export function useCampusState(initialEventId?: string) {
   /** A deep link to an event that no longer exists (once student events have loaded). */
   const missingRequested = ready && requestedId !== null && selectedId === requestedId && !selectedEvent;
 
+  // Moves only when an event starts or ends, so lists and counts follow the real times.
+  const lifecycleNow = useLifecycleNow(events);
+  /** What the live map shows: ended events leave it but stay in the data for profile lists. */
+  const liveEvents = useMemo(() => events.filter((event) => !hasEnded(event, lifecycleNow)), [events, lifecycleNow]);
+
   const visibleEvents = useMemo(
     () =>
-      events.filter((event) => {
+      liveEvents.filter((event) => {
         if (!matchesQuery(event, query)) return false;
         if (sidebarFilter === "saved" && !saved.has(event.id)) return false;
         if (sidebarFilter !== "all" && sidebarFilter !== "saved" && event.category !== sidebarFilter)
@@ -102,16 +109,16 @@ export function useCampusState(initialEventId?: string) {
         if (dateFilter === "today" && !event.dateLabel.startsWith("Today")) return false;
         return true;
       }),
-    [events, query, sidebarFilter, saved, mapPill, categoryFilter, dateFilter],
+    [liveEvents, query, sidebarFilter, saved, mapPill, categoryFilter, dateFilter],
   );
 
-  const stats = useMemo(() => {
-    const now = new Date();
-    return {
-      happeningNow: events.filter((event) => isHappeningNow(event, now)).length,
-      freeFood: events.filter((event) => event.category === "Free Food").length,
-    };
-  }, [events]);
+  const stats = useMemo(
+    () => ({
+      happeningNow: liveEvents.filter((event) => isHappeningNow(event, lifecycleNow)).length,
+      freeFood: liveEvents.filter((event) => event.category === "Free Food").length,
+    }),
+    [liveEvents, lifecycleNow],
+  );
 
   const showToast = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -213,6 +220,7 @@ export function useCampusState(initialEventId?: string) {
 
   return {
     events,
+    liveEvents,
     ready,
     clearFilters,
     visibleEvents,

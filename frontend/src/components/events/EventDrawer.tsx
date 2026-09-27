@@ -20,10 +20,12 @@ import {
 
 import { AvatarStack } from "./AvatarStack";
 import { CategoryHeroArt } from "./CategoryHeroArt";
+import { CountdownChip } from "./CountdownChip";
 import { EventHeroArt } from "./EventHeroArt";
 import { CategoryGlyph, PeopleIcon } from "@/components/icons/CategoryIcons";
 import { MARKER_PALETTE } from "@/lib/constants";
 import { directionsUrl } from "@/lib/directions";
+import { useEventCountdown } from "@/lib/event-clock";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn, formatCount } from "@/lib/utils";
 import type { CampusEvent } from "@/types/event";
@@ -121,6 +123,7 @@ function DrawerCard({
 }: EventDrawerProps) {
   const palette = MARKER_PALETTE[event.markerColor];
   const goingCount = event.goingCount + (isGoing ? 1 : 0);
+  const countdown = useEventCountdown(event);
 
   return (
     <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[20px] bg-panel shadow-panel">
@@ -225,10 +228,14 @@ function DrawerCard({
             <PersonStanding size={15} strokeWidth={2.3} aria-hidden />
             {event.distance}
           </span>
-          <span className="inline-flex h-[30px] items-center gap-[6px] rounded-full bg-coral-soft px-[11px] text-[13.5px] font-semibold text-coral-text">
-            <Clock size={14} strokeWidth={2.4} aria-hidden />
-            {event.timeStatus}
-          </span>
+          {countdown ? (
+            <CountdownChip event={event} size="md" />
+          ) : (
+            <span className="inline-flex h-[30px] items-center gap-[6px] rounded-full bg-coral-soft px-[11px] text-[13.5px] font-semibold text-coral-text">
+              <Clock size={14} strokeWidth={2.4} aria-hidden />
+              {event.timeStatus}
+            </span>
+          )}
         </div>
 
 
@@ -317,7 +324,7 @@ function DrawerCard({
               {event.endTime ? (
                 <>
                   {event.startTime} – {event.endTime}{" "}
-                  <span className="font-semibold text-coral-text">({event.timeStatus})</span>
+                  <span className="font-semibold text-coral-text">({countdown?.label ?? event.timeStatus})</span>
                 </>
               ) : (
                 event.startTime

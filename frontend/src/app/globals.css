@@ -90,3 +90,70 @@ body {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* Event countdowns: slow, low-contrast motion only; no flashing. */
+@keyframes cc-breathe {
+  0%,
+  100% {
+    transform: scale(0.82);
+    opacity: 0.32;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.08;
+  }
+}
+
+@keyframes cc-heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.07);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.045);
+  }
+  60% {
+    transform: scale(1);
+  }
+}
+
+@keyframes cc-live-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.cc-breathe {
+  animation: cc-breathe 3.2s ease-in-out infinite;
+}
+
+.cc-breathe-strong {
+  animation: cc-breathe 1.8s ease-in-out infinite;
+}
+
+.cc-heartbeat {
+  animation: cc-heartbeat 1.9s ease-in-out infinite;
+}
+
+.cc-live-dot {
+  animation: cc-live-dot 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-breathe,
+  .cc-breathe-strong,
+  .cc-heartbeat,
+  .cc-live-dot {
+    animation: none;
+  }
+}

@@ -1,4 +1,7 @@
+import { liveTimeStatus } from "@/lib/event-clock";
 import type { CampusEvent, EventCategory } from "@/types/event";
+
+const withLiveStatus = (event: CampusEvent): CampusEvent => ({ ...event, timeStatus: liveTimeStatus(event) });
 
 export interface GeminiReply {
   text: string;
@@ -14,7 +17,11 @@ export async function fetchGeminiReply(
   const response = await fetch("/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, currentEvents: events, selectedEvent }),
+    body: JSON.stringify({
+      message,
+      currentEvents: events.map(withLiveStatus),
+      selectedEvent: selectedEvent && withLiveStatus(selectedEvent),
+    }),
   });
   const data: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new Error("Gemini is unavailable right now.");
@@ -59,7 +66,7 @@ function scoreEvent(event: CampusEvent, query: string): number {
 function listEvents(events: CampusEvent[]): string {
   return events
     .slice(0, 5)
-    .map((event) => `${event.title} — ${event.locationName} (${event.timeStatus})`)
+    .map((event) => `${event.title} — ${event.locationName} (${liveTimeStatus(event)})`)
     .join("\n");
 }
 
@@ -107,7 +114,7 @@ export function answerCampusQuestion(
 
   if (selectedEvent && includesAny(query, ["this event", "this one", "selected", "tell me about"])) {
     return {
-      text: `${selectedEvent.title} is a ${selectedEvent.category.toLowerCase()} event at ${selectedEvent.locationName}. ${selectedEvent.timeStatus}. Hosted by ${selectedEvent.host}.`,
+      text: `${selectedEvent.title} is a ${selectedEvent.category.toLowerCase()} event at ${selectedEvent.locationName}. ${liveTimeStatus(selectedEvent)}. Hosted by ${selectedEvent.host}.`,
       matches: [selectedEvent],
     };
   }

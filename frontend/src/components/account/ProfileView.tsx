@@ -8,6 +8,7 @@ import { Bookmark, CalendarCheck, CalendarDays, CheckCircle2, Clock, GraduationC
 
 import { useAccount } from "./AccountProvider";
 import { Avatar } from "./Avatar";
+import { CountdownChip } from "@/components/events/CountdownChip";
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import { websiteLabel } from "@/lib/account";
 import { MARKER_PALETTE } from "@/lib/constants";
@@ -253,6 +254,7 @@ function ProfileEventCard({ event }: { event: CampusEvent }) {
               Official
             </span>
           )}
+          <CountdownChip event={event} className="ml-auto" />
         </span>
         <span className="mt-[3px] flex items-center gap-1.5 text-[13px] font-medium text-muted">
           <Clock size={13} strokeWidth={2.3} aria-hidden className="shrink-0" />

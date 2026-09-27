@@ -139,19 +139,19 @@ export function smartNotifications({ events, going, saved, userId, interests, no
     }));
 }
 
-/** The second line of a notification, recomputed from the live event on every render. */
+/**
+ * The second line of a notification, recomputed from the live event on every
+ * render. The countdown itself is shown beside it as a chip.
+ */
 export function liveStatus(event: CampusEvent | undefined, now: number): { text: string; available: boolean } {
   if (!event) return { text: "This event is no longer available", available: false };
   const timing = timingOf(event);
   if (!timing) return { text: event.locationName, available: true };
-  const { start, end, posted } = timing;
+  const { end, posted } = timing;
   if (end <= now) return { text: `Ended · ${event.locationName}`, available: true };
   const parts: string[] = [];
   if (posted !== null && now - posted < FRESH_POST_MINUTES * MINUTE)
     parts.push(`Posted ${humanizeMinutes(Math.max(1, Math.round((now - posted) / MINUTE)))} ago`);
-  parts.push(
-    start <= now ? "Happening now" : `Starts in ${humanizeMinutes(Math.max(1, Math.round((start - now) / MINUTE)))}`,
-  );
   parts.push(event.locationName);
   return { text: parts.join(" · "), available: true };
 }

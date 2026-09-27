@@ -1,11 +1,13 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { motion, type MotionValue } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion, type MotionValue } from "framer-motion";
 import { BookOpen, BriefcaseBusiness, GraduationCap, Music, Users } from "lucide-react";
 
+import { countdownTone } from "@/components/events/CountdownChip";
 import { PizzaSliceIcon, RunnerIcon } from "@/components/icons/CategoryIcons";
 import { MARKER_PALETTE } from "@/lib/constants";
+import { useEventCountdown, type EventCountdown } from "@/lib/event-clock";
 import { cn } from "@/lib/utils";
 import type { MapPoint } from "@/lib/geo";
 import type { CampusEvent, MarkerIcon } from "@/types/event";
@@ -145,6 +147,36 @@ export function PhotoBubble({
   );
 }
 
+/** Compact remaining-time tag under a marker: "in 12m", "8m", "42s". */
+function MarkerCountdown({ countdown }: { countdown: EventCountdown }) {
+  const tone = countdownTone(countdown);
+  // Calm states sit on white so the tag reads against the map ground.
+  const surface =
+    countdown.phase === "upcoming"
+      ? "bg-white text-ink-soft ring-1 ring-inset ring-line-strong"
+      : countdown.urgency === "normal"
+        ? "bg-white text-brand ring-1 ring-inset ring-brand/25"
+        : tone.className;
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-1/2 top-[calc(100%+3px)] -translate-x-1/2"
+    >
+      <span
+        className={cn(
+          "flex h-[18px] items-center gap-[4px] whitespace-nowrap rounded-full px-[7px] text-[11px] font-bold leading-none shadow-[0_1px_3px_rgba(15,37,71,0.2)] transition-colors duration-500",
+          surface,
+          tone.pulse && "cc-heartbeat",
+          countdown.ticking && "tabular-nums",
+        )}
+      >
+        {countdown.phase === "live" && <span className="cc-live-dot h-[5px] w-[5px] rounded-full bg-current" />}
+        {countdown.short}
+      </span>
+    </span>
+  );
+}
+
 /**
  * A single teardrop pin anchored by its tip to the event's map position.
  * Only the selected marker carries the soft outer glow.
@@ -162,6 +194,10 @@ export function EventMarker({
   // A photo bubble is a circle plus a 10px pointer; its tip sits on the spot like the pin's.
   const width = photo ? (selected ? 56 : 46) : selected ? 39 : 34;
   const height = photo ? width + 10 : selected ? 50 : 44;
+  const countdown = useEventCountdown(event);
+  const live = countdown?.phase === "live";
+  const reduceMotion = useReducedMotion();
+  const label = countdown && countdown.phase !== "ended" ? `, ${countdown.label}` : "";
 
   return (
     <MapAnchor x={point.x} y={point.y} inverseScale={inverseScale} className={selected ? "z-[2]" : "z-[1]"}>
@@ -169,6 +205,48 @@ export function EventMarker({
       className="absolute"
       style={{ transform: "translate(-50%, -100%)" }}
     >
+    <motion.div
+      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.55, y: 6 }}
+      transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+      className="relative origin-bottom"
+    >
+      {live && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2"
+          style={{ top: width / 2 }}
+        >
+          <span
+            className={cn(
+              "block rounded-full",
+              countdown.urgency === "final" || countdown.urgency === "seconds" ? "cc-breathe-strong" : "cc-breathe",
+            )}
+            style={{ width: width + 30, height: width + 30, backgroundColor: palette.solid }}
+          />
+        </span>
+      )}
+      <AnimatePresence initial={false}>
+        {live && !reduceMotion && (
+          <motion.span
+            key="went-live"
+            aria-hidden
+            initial={{ scale: 0.6, opacity: 0.5 }}
+            animate={{ scale: 2.1, opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="pointer-events-none absolute left-1/2 block rounded-full border-2"
+            style={{
+              top: 0,
+              marginLeft: -width / 2,
+              width,
+              height: width,
+              borderColor: palette.solid,
+            }}
+          />
+        )}
+      </AnimatePresence>
       {selected && (
         <span aria-hidden className="pointer-events-none absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2">
           <span
@@ -185,7 +263,7 @@ export function EventMarker({
       <motion.button
         type="button"
         onClick={() => onSelect(event.id)}
-        aria-label={`${event.title} at ${event.locationName}`}
+        aria-label={`${event.title} at ${event.locationName}${label}`}
         aria-pressed={selected}
         tabIndex={interactive ? 0 : -1}
         initial={false}
@@ -204,6 +282,8 @@ export function EventMarker({
           <MarkerPin markerColor={event.markerColor} iconType={event.iconType} selected={selected} />
         )}
       </motion.button>
+      {countdown && countdown.phase !== "ended" && <MarkerCountdown countdown={countdown} />}
+    </motion.div>
     </div>
     </MapAnchor>
   );

@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Crown, Menu, Search, X } from "lucide-react";
 
 import { AccountMenu } from "@/components/account/AccountMenu";
+import { CountdownChip } from "@/components/events/CountdownChip";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import type { CampusEvent } from "@/types/event";
@@ -182,7 +183,7 @@ function SearchField({ query, onQueryChange, results, onSelectResult }: SearchPr
                         <CategoryGlyph category={event.category} size={17} />
                       )}
                     </span>
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="block truncate text-[14.5px] font-bold text-ink">
                         {event.title}
                       </span>
@@ -190,6 +191,7 @@ function SearchField({ query, onQueryChange, results, onSelectResult }: SearchPr
                         {event.locationName} · {event.category} · {event.host}
                       </span>
                     </span>
+                    <CountdownChip event={event} />
                   </button>
                 </li>
               ))

@@ -1,7 +1,7 @@
 "use client";
 
 import { useImperativeHandle, type Ref } from "react";
-import { motion, useTransform, type MotionValue } from "framer-motion";
+import { AnimatePresence, motion, useTransform, type MotionValue } from "framer-motion";
 import { Crown } from "lucide-react";
 
 import { CampusMapArt } from "./CampusMapArt";
@@ -146,20 +146,23 @@ export function CampusMapPlaceholder({
             </MapAnchor>
           )}
 
-          {events.map((event) => {
-            const point = eventPoint(event);
-            return point ? (
-              <EventMarker
-                key={event.id}
-                event={event}
-                point={point}
-                selected={event.id === selectedEventId}
-                onSelect={onSelectEvent}
-                inverseScale={inverseScale}
-                interactive={!picking}
-              />
-            ) : null;
-          })}
+          {/* Markers fade out when an event ends or is filtered away. */}
+          <AnimatePresence initial={false}>
+            {events.map((event) => {
+              const point = eventPoint(event);
+              return point ? (
+                <EventMarker
+                  key={event.id}
+                  event={event}
+                  point={point}
+                  selected={event.id === selectedEventId}
+                  onSelect={onSelectEvent}
+                  inverseScale={inverseScale}
+                  interactive={!picking}
+                />
+              ) : null;
+            })}
+          </AnimatePresence>
 
           {draftPin && (
             <MapAnchor x={draftPin.x} y={draftPin.y} inverseScale={inverseScale} className="z-[3]">
