@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, Check, ChevronDown, ImagePlus, Info, Loader2, MapPin, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ImagePlus, Info, Loader2, MapPin, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
 import { CAMPUS_LOCATIONS, getCampusLocation } from "@/data/campus-locations";
@@ -61,10 +61,13 @@ function PhotoField({ photo, onChange }: { photo: File | null; onChange: (photo:
   };
 
   return (
-    <div>
-      <span className={LABEL}>
-        Photo <span className="font-medium text-faint">(optional)</span>
-      </span>
+    <section aria-labelledby="ev-photo-label">
+      <div className="mb-[7px] flex items-baseline justify-between gap-3">
+        <span id="ev-photo-label" className="text-[13px] font-bold text-ink-soft">
+          Event Photo
+        </span>
+        <span className="text-[12px] font-semibold text-faint">Optional</span>
+      </div>
       <input
         ref={inputRef}
         id="ev-photo"
@@ -75,17 +78,17 @@ function PhotoField({ photo, onChange }: { photo: File | null; onChange: (photo:
         className="sr-only"
       />
       {preview ? (
-        <div className="flex items-center gap-3 rounded-[14px] border border-line bg-field p-2">
+        <div className="overflow-hidden rounded-[14px] border border-line bg-field">
           {/* Local object URL for the chosen file; next/image doesn't apply. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt="Selected event photo" className="h-[72px] w-[96px] shrink-0 rounded-[10px] object-cover" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13.5px] font-semibold text-ink">{photo?.name}</p>
-            <div className="mt-1.5 flex flex-wrap gap-2">
+          <img src={preview} alt="Selected event photo" className="h-[168px] w-full object-cover" />
+          <div className="flex items-center justify-between gap-2 border-t border-line bg-panel px-3 py-2">
+            <span className="min-w-0 truncate text-[12.5px] font-semibold text-muted">{photo?.name}</span>
+            <div className="flex shrink-0 gap-2">
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="flex h-8 items-center gap-1.5 rounded-[9px] bg-brand-soft px-2.5 text-[13px] font-bold text-brand transition-colors hover:bg-[#dde8fa]"
+                className="flex h-8 items-center gap-1.5 rounded-full bg-brand-soft px-3 text-[13px] font-bold text-brand transition-colors hover:bg-[#dde8fa]"
               >
                 <RefreshCw size={14} strokeWidth={2.4} aria-hidden />
                 Replace
@@ -96,7 +99,7 @@ function PhotoField({ photo, onChange }: { photo: File | null; onChange: (photo:
                   onChange(null);
                   setError(null);
                 }}
-                className="flex h-8 items-center gap-1.5 rounded-[9px] bg-panel px-2.5 text-[13px] font-bold text-ink-soft ring-1 ring-line transition-colors hover:bg-[#f5f7fb]"
+                className="flex h-8 items-center gap-1.5 rounded-full bg-field px-3 text-[13px] font-bold text-coral-text transition-colors hover:bg-coral-soft"
               >
                 <Trash2 size={14} strokeWidth={2.4} aria-hidden />
                 Remove
@@ -108,11 +111,22 @@ function PhotoField({ photo, onChange }: { photo: File | null; onChange: (photo:
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="flex h-[72px] w-full items-center justify-center gap-2 rounded-[14px] border border-dashed border-line-strong bg-field text-[14px] font-bold text-ink-soft transition-colors hover:border-brand/40 hover:bg-brand-tint hover:text-brand"
+          aria-describedby="ev-photo-hint"
+          className="group flex w-full items-center gap-3.5 rounded-[14px] border border-dashed border-line-strong bg-field px-4 py-3.5 text-left transition-colors hover:border-brand/40 hover:bg-brand-tint"
         >
-          <ImagePlus size={19} strokeWidth={2.2} aria-hidden />
-          Add a photo
-          <span className="font-medium text-faint">· JPG, PNG or WebP, up to 5 MB</span>
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[12px] bg-panel text-brand shadow-pill">
+            <ImagePlus size={22} strokeWidth={2.1} aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14.5px] font-bold text-ink">Show students what&apos;s happening</span>
+            <span id="ev-photo-hint" className="mt-[2px] block text-[12.5px] font-medium text-muted">
+              JPG, PNG or WebP · up to 5 MB
+            </span>
+          </span>
+          <span className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-brand px-3.5 text-[13.5px] font-bold text-white shadow-[0_4px_12px_rgb(23_102_232_/_0.22)] transition-colors group-hover:bg-brand-dark">
+            <Plus size={15} strokeWidth={2.8} aria-hidden />
+            Add Photo
+          </span>
         </button>
       )}
       {error && (
@@ -120,7 +134,7 @@ function PhotoField({ photo, onChange }: { photo: File | null; onChange: (photo:
           {error}
         </p>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -227,6 +241,8 @@ export function CreateEventModal({
                 {error("title")}
               </div>
 
+              <PhotoField photo={draft.photo} onChange={(photo) => set("photo", photo)} />
+
               <div>
                 <label htmlFor="ev-desc" className={LABEL}>
                   Description
@@ -241,8 +257,6 @@ export function CreateEventModal({
                   className={cn(INPUT, "resize-none py-2.5 leading-[1.4]")}
                 />
               </div>
-
-              <PhotoField photo={draft.photo} onChange={(photo) => set("photo", photo)} />
 
               <fieldset>
                 <legend className={LABEL}>Category</legend>

@@ -105,7 +105,11 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
   /** Moves the map to an event's pin, when it has one. */
   const focusEvent = (event: CampusEvent) => {
     const point = eventPoint(event);
-    if (point) mapRef.current?.centerOn(point);
+    if (!point) return;
+    // On desktop the drawer column narrows the map as it slides in (0.26s), so
+    // centre against the final width rather than the current one.
+    if (!isSheet && !showDrawer) window.setTimeout(() => mapRef.current?.centerOn(point), 280);
+    else mapRef.current?.centerOn(point);
   };
 
   // Deep links and picks from the profile page fly to the event once it has loaded.
@@ -234,7 +238,11 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             viewRef={mapRef}
             events={state.visibleEvents}
             selectedEventId={state.drawerOpen && selected ? selected.id : null}
-            onSelectEvent={state.selectEvent}
+            onSelectEvent={(id) => {
+              state.selectEvent(id);
+              const event = state.events.find((e) => e.id === id);
+              if (event) focusEvent(event);
+            }}
             userPoint={userOnMap}
             onLocate={handleLocateButton}
             locating={geo.status === "requesting"}

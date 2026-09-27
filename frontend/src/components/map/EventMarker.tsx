@@ -113,12 +113,12 @@ export function PhotoBubble({
 }: Pick<CampusEvent, "markerColor" | "iconType"> & { imageUrl: string; selected?: boolean }) {
   const palette = MARKER_PALETTE[markerColor];
   const Icon = MARKER_ICONS[iconType];
-  const size = selected ? 50 : 42;
+  const size = selected ? 56 : 46;
   return (
     <>
       <span
         className="absolute left-0 top-0 block overflow-hidden rounded-full border-[2.5px] border-white bg-field"
-        style={{ width: size, height: size, boxShadow: `0 0 0 2.5px ${palette.solid}` }}
+        style={{ width: size, height: size, boxShadow: `0 0 0 2.5px ${palette.solid}, 0 4px 10px rgb(16 37 71 / 0.18)` }}
       >
         {/* Event photos come from Supabase Storage or a local data URL. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -160,7 +160,7 @@ export function EventMarker({
   const palette = MARKER_PALETTE[event.markerColor];
   const photo = event.imageUrl ?? null;
   // A photo bubble is a circle plus a 10px pointer; its tip sits on the spot like the pin's.
-  const width = photo ? (selected ? 50 : 42) : selected ? 39 : 34;
+  const width = photo ? (selected ? 56 : 46) : selected ? 39 : 34;
   const height = photo ? width + 10 : selected ? 50 : 44;
 
   return (
