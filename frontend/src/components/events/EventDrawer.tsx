@@ -212,9 +212,9 @@ function DrawerCard({
   const chatAuthors = useMemo(
     () =>
       anonymousHost
-        ? { ...chat.authors, [anonymousHost]: { name: isOrganizer ? "You (anonymous)" : "Anonymous student", avatarUrl: null } }
+        ? { ...chat.authors, [anonymousHost]: { name: "Anonymous student", avatarUrl: null } }
         : chat.authors,
-    [chat.authors, anonymousHost, isOrganizer],
+    [chat.authors, anonymousHost],
   );
   // Anyone signed in can read; posting needs Going (or the Rally join), like the database rule.
   const canPost = isOrganizer || isGoing || (event.rally !== null && joinedRallies.has(event.id));
