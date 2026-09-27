@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 
+import { useAccount } from "@/components/account/AccountProvider";
 import { CreateEventModal } from "@/components/events/CreateEventModal";
+import { DeleteEventDialog } from "@/components/events/DeleteEventDialog";
 import { EventDrawer } from "@/components/events/EventDrawer";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopNavbar } from "@/components/layout/TopNavbar";
@@ -16,11 +18,13 @@ import { MapEmptyState } from "@/components/map/MapEmptyState";
 import { MapFilters } from "@/components/map/MapFilters";
 import { MapToast } from "@/components/map/MapToast";
 import { PickLocationBanner } from "@/components/map/PickLocationBanner";
+import { nearestCampusLocation } from "@/data/campus-locations";
 import { CATEGORY_STYLE } from "@/lib/constants";
 import { geoToMap, isOnMap } from "@/lib/geo";
-import { eventPath, useCampusState } from "@/lib/use-campus-state";
+import { eventPath, eventPoint, useCampusState } from "@/lib/use-campus-state";
 import { useGeolocation, type GeoStatus } from "@/lib/use-geolocation";
 import { useMediaQuery } from "@/lib/use-media-query";
+import { useUserEvents } from "@/lib/user-events";
 import type { CampusEvent, EventDraft, MapPill } from "@/types/event";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -36,6 +40,7 @@ function emptyDraft(now = new Date()): EventDraft {
     description: "",
     category: "Social",
     locationName: "",
+    locationId: null,
     startTime: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
     endTime,
     point: null,
@@ -50,14 +55,7 @@ const LOCATION_MESSAGES: Partial<Record<GeoStatus, string>> = {
 
 /** Native share sheet when available, otherwise copy the event link. */
 async function shareEvent(event: CampusEvent, notify: (message: string) => void) {
-  const path = eventPath(event);
-  if (!path) {
-    notify(
-      "Share links arrive once events are saved permanently — this one only exists in your current session.",
-    );
-    return;
-  }
-  const url = `${window.location.origin}${path}`;
+  const url = `${window.location.origin}${eventPath(event)}`;
   if (navigator.share) {
     try {
       await navigator.share({ title: event.title, text: `${event.title} at ${event.locationName}`, url });
@@ -82,28 +80,76 @@ interface CampusAppProps {
 /** The full-screen Campus Connect shell, shared by `/` and `/events/[id]`. */
 export function CampusApp({ initialEventId }: CampusAppProps) {
   const state = useCampusState(initialEventId);
+  const { mode, displayName } = useAccount();
+  const { canDelete, composeRequested, setComposeRequested } = useUserEvents();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const mapRef = useRef<MapViewHandle>(null);
   const geo = useGeolocation();
-  const [composer, setComposer] = useState<"closed" | "form" | "picking">("closed");
+  const [composer, setComposer] = useState<"closed" | "form" | "picking">(() =>
+    composeRequested ? "form" : "closed",
+  );
   const [draft, setDraft] = useState<EventDraft>(() => emptyDraft());
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<CampusEvent | null>(null);
   // The mobile bottom sheet would cover the map while choosing a spot.
   const isSheet = useMediaQuery("(max-width: 899px)");
+  const selected = state.selectedEvent;
   const showDrawer = state.drawerOpen && !(isSheet && composer === "picking");
+
+  useEffect(() => {
+    if (composeRequested) setComposeRequested(false);
+  }, [composeRequested, setComposeRequested]);
+
+  /** Moves the map to an event's pin, when it has one. */
+  const focusEvent = (event: CampusEvent) => {
+    const point = eventPoint(event);
+    if (point) mapRef.current?.centerOn(point);
+  };
+
+  // Deep links and picks from the profile page fly to the event once it has loaded.
+  const focusedRequest = useRef(false);
+  const requested = state.requestedId && selected?.id === state.requestedId ? selected : null;
+  useEffect(() => {
+    if (!requested || focusedRequest.current) return;
+    focusedRequest.current = true;
+    const point = eventPoint(requested);
+    if (point) mapRef.current?.centerOn(point);
+  }, [requested]);
 
   const openComposer = () => {
     setSidebarOpen(false);
     if (!draft.title && !draft.point) setDraft(emptyDraft());
+    setPostError(null);
     setComposer("form");
   };
 
-  const submitDraft = () => {
-    const created = state.createEvent(draft);
-    if (!created) return;
+  const submitDraft = async () => {
+    setPosting(true);
+    setPostError(null);
+    const result = await state.createEvent(draft, displayName);
+    setPosting(false);
+    if ("error" in result) {
+      setPostError(result.error);
+      return;
+    }
     setComposer("closed");
     setDraft(emptyDraft());
-    mapRef.current?.centerOn({ x: created.mapX, y: created.mapY });
-    state.showToast("Your event is on the map for this session. It will disappear when you refresh.");
+    focusEvent(result.event);
+    state.showToast(
+      mode === "supabase"
+        ? "Your event is posted. Everyone on Campus Connect can see it now."
+        : "Your event is posted. Local preview: it's saved in this browser only.",
+    );
+  };
+
+  const confirmDelete = async (): Promise<string | null> => {
+    if (!deleting) return null;
+    const error = await state.deleteEvent(deleting.id);
+    if (error) return error;
+    setDeleting(null);
+    state.showToast("Event deleted.");
+    return null;
   };
 
   useEffect(() => {
@@ -127,10 +173,10 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
     }
     const point = geoToMap(result.position);
     if (!isOnMap(point)) {
-      state.showToast("You're outside the campus map area, so you can't be shown on it yet.");
+      state.showToast("You're outside the current Campus Connect map area.");
       return false;
     }
-    mapRef.current?.centerOn(point, 1.8);
+    mapRef.current?.centerOn(point, 1.5);
     return true;
   };
 
@@ -156,7 +202,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
         results={state.visibleEvents}
         onSelectResult={(event) => {
           state.selectEvent(event.id);
-          mapRef.current?.centerOn({ x: event.mapX, y: event.mapY });
+          focusEvent(event);
         }}
       />
 
@@ -186,7 +232,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
           <CampusMapPlaceholder
             viewRef={mapRef}
             events={state.visibleEvents}
-            selectedEventId={state.drawerOpen ? state.selectedEvent.id : null}
+            selectedEventId={state.drawerOpen && selected ? selected.id : null}
             onSelectEvent={state.selectEvent}
             userPoint={userOnMap}
             onLocate={handleLocateButton}
@@ -195,7 +241,13 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             onPickPoint={
               composer === "picking"
                 ? (point) => {
-                    setDraft((d) => ({ ...d, point }));
+                    const place = nearestCampusLocation(point, 25);
+                    setDraft((d) => ({
+                      ...d,
+                      point,
+                      locationId: place?.id ?? null,
+                      locationName: place ? place.name : d.locationId ? "" : d.locationName,
+                    }));
                     setComposer("form");
                   }
                 : undefined
@@ -218,7 +270,7 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
             onCategoryChange={state.setCategoryFilter}
           />
           )}
-          <CampusStats />
+          <CampusStats happeningNow={state.stats.happeningNow} freeFood={state.stats.freeFood} />
           <MapEmptyState
             visible={state.visibleEvents.length === 0}
             message={
@@ -238,18 +290,24 @@ export function CampusApp({ initialEventId }: CampusAppProps) {
           onClose={() => setComposer("closed")}
           onChooseOnMap={() => setComposer("picking")}
           onSubmit={submitDraft}
+          submitting={posting}
+          submitError={postError}
+          localPreview={mode === "local"}
         />
 
+        <DeleteEventDialog event={deleting} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />
+
         <AnimatePresence initial={false}>
-          {showDrawer && (
+          {showDrawer && selected && (
             <EventDrawer
-              event={state.selectedEvent}
+              event={selected}
               onClose={state.closeDrawer}
-              isGoing={state.going.has(state.selectedEvent.id)}
-              onToggleGoing={() => state.toggleGoing(state.selectedEvent.id)}
-              isSaved={state.saved.has(state.selectedEvent.id)}
-              onToggleSaved={() => state.toggleSaved(state.selectedEvent.id)}
-              onShare={() => shareEvent(state.selectedEvent, state.showToast)}
+              isGoing={state.going.has(selected.id)}
+              onToggleGoing={() => state.toggleGoing(selected.id)}
+              isSaved={state.saved.has(selected.id)}
+              onToggleSaved={() => state.toggleSaved(selected.id)}
+              onShare={() => shareEvent(selected, state.showToast)}
+              onDelete={canDelete(selected) ? () => setDeleting(selected) : undefined}
             />
           )}
         </AnimatePresence>

@@ -21,7 +21,7 @@ function minutesOfDay(value: string): number {
   return h * 60 + m;
 }
 
-function humanizeMinutes(minutes: number): string {
+export function humanizeMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.round(minutes / 60);
   return `${hours} hr`;

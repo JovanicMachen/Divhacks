@@ -2,25 +2,22 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { CampusApp } from "@/components/CampusApp";
-import { MOCK_EVENTS } from "@/data/mock-events";
+import { OFFICIAL_EVENTS } from "@/data/mock-events";
 
 interface EventPageProps {
   params: Promise<{ id: string }>;
 }
 
-/**
- * Deep link for built-in events. Events created in the browser have no route:
- * they only exist in that session until server persistence is added.
- */
-export const dynamicParams = false;
+/** Student events have uuid ids and are resolved on the client after sign-in. */
+const STUDENT_EVENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function generateStaticParams() {
-  return MOCK_EVENTS.map((event) => ({ id: event.id }));
+  return OFFICIAL_EVENTS.map((event) => ({ id: event.id }));
 }
 
 export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
   const { id } = await params;
-  const event = MOCK_EVENTS.find((e) => e.id === id);
+  const event = OFFICIAL_EVENTS.find((e) => e.id === id);
   if (!event) return {};
   return {
     title: `${event.title} at ${event.locationName} — Campus Connect`,
@@ -30,6 +27,6 @@ export async function generateMetadata({ params }: EventPageProps): Promise<Meta
 
 export default async function EventPage({ params }: EventPageProps) {
   const { id } = await params;
-  if (!MOCK_EVENTS.some((event) => event.id === id)) notFound();
+  if (!OFFICIAL_EVENTS.some((event) => event.id === id) && !STUDENT_EVENT_ID.test(id)) notFound();
   return <CampusApp initialEventId={id} />;
 }

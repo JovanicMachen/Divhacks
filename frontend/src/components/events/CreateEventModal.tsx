@@ -2,9 +2,10 @@
 
 import { useEffect, useId, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Info, MapPin, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, Info, Loader2, MapPin, X } from "lucide-react";
 
 import { CategoryGlyph } from "@/components/icons/CategoryIcons";
+import { CAMPUS_LOCATIONS, getCampusLocation } from "@/data/campus-locations";
 import { CATEGORY_STYLE, EVENT_CATEGORIES, MARKER_PALETTE } from "@/lib/constants";
 import { cn, isTimeRangeValid } from "@/lib/utils";
 import type { EventDraft } from "@/types/event";
@@ -17,7 +18,13 @@ interface CreateEventModalProps {
   /** Hides the modal and lets the user tap a spot on the campus map. */
   onChooseOnMap: () => void;
   onSubmit: () => void;
+  submitting?: boolean;
+  submitError?: string | null;
+  /** Local preview mode: events are saved in this browser only. */
+  localPreview?: boolean;
 }
+
+const LOCATION_OPTIONS = [...CAMPUS_LOCATIONS].sort((a, b) => a.name.localeCompare(b.name));
 
 type Field = "title" | "point" | "time";
 
@@ -28,12 +35,12 @@ const LABEL = "mb-[7px] block text-[13px] font-bold text-ink-soft";
 function validate(draft: EventDraft): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (!draft.title.trim()) errors.title = "Give your event a title.";
-  if (!draft.point) errors.point = "Choose where it's happening on the map.";
+  if (!draft.point) errors.point = "Pick a campus location or choose a spot on the map.";
   if (!isTimeRangeValid(draft.startTime, draft.endTime)) errors.time = "End time must be after the start time.";
   return errors;
 }
 
-/** "Post Event" form. Created events live in browser memory only. */
+/** "Post Event" form. */
 export function CreateEventModal({
   open,
   draft,
@@ -41,6 +48,9 @@ export function CreateEventModal({
   onClose,
   onChooseOnMap,
   onSubmit,
+  submitting = false,
+  submitError = null,
+  localPreview = false,
 }: CreateEventModalProps) {
   const titleId = useId();
   const [showErrors, setShowErrors] = useState(false);
@@ -56,6 +66,7 @@ export function CreateEventModal({
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (Object.keys(errors).length > 0) {
       setShowErrors(true);
       return;
@@ -178,18 +189,45 @@ export function CreateEventModal({
               </fieldset>
 
               <div>
-                <label htmlFor="ev-location" className={LABEL}>
+                <label htmlFor="ev-place" className={LABEL}>
                   Location
                 </label>
                 <div className="flex flex-col gap-2 tablet:flex-row">
-                  <input
-                    id="ev-location"
-                    value={draft.locationName}
-                    onChange={(e) => set("locationName", e.target.value)}
-                    placeholder="Building or spot, e.g. Low Steps"
-                    maxLength={60}
-                    className={cn(INPUT, "h-11 min-w-0 tablet:flex-1")}
-                  />
+                  <div className="relative min-w-0 tablet:flex-1">
+                    <select
+                      id="ev-place"
+                      value={draft.locationId ?? (draft.point ? "custom" : "")}
+                      onChange={(e) => {
+                        const place = getCampusLocation(e.target.value);
+                        if (place) {
+                          onChange({
+                            ...draft,
+                            locationId: place.id,
+                            locationName: place.name,
+                            point: { x: place.mapX, y: place.mapY },
+                          });
+                        }
+                      }}
+                      aria-invalid={showErrors && Boolean(errors.point)}
+                      className={cn(INPUT, "h-11 cursor-pointer appearance-none pr-9", !draft.point && "text-faint")}
+                    >
+                      <option value="" disabled>
+                        Choose a campus location
+                      </option>
+                      {draft.point && !draft.locationId && <option value="custom">Pinned spot on the map</option>}
+                      {LOCATION_OPTIONS.map((place) => (
+                        <option key={place.id} value={place.id}>
+                          {place.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={17}
+                      strokeWidth={2.3}
+                      aria-hidden
+                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-faint"
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={onChooseOnMap}
@@ -204,6 +242,17 @@ export function CreateEventModal({
                     {draft.point ? "Pinned · Change" : "Choose on map"}
                   </button>
                 </div>
+                {draft.point && !draft.locationId && (
+                  <input
+                    id="ev-location"
+                    aria-label="Name this spot"
+                    value={draft.locationName}
+                    onChange={(e) => set("locationName", e.target.value)}
+                    placeholder="Name this spot, e.g. Steps outside Avery"
+                    maxLength={60}
+                    className={cn(INPUT, "mt-2 h-11")}
+                  />
+                )}
                 {error("point")}
               </div>
 
@@ -242,9 +291,19 @@ export function CreateEventModal({
             <div className="px-6 pb-6 pt-4 tablet:px-7">
               <p className="flex items-start gap-[7px] rounded-[11px] bg-[#F3F6FB] px-[11px] py-[9px] text-[12.5px] font-medium leading-[1.4] text-muted">
                 <Info size={14} strokeWidth={2.3} aria-hidden className="mt-[1px] shrink-0 text-faint" />
-                Posted events are temporary for now: they only exist in this browser session and
-                disappear when you refresh.
+                {localPreview
+                  ? "Local preview: Supabase isn't connected, so posted events are saved in this browser only. You can delete your own events any time."
+                  : "Your event is saved to Campus Connect and shown to everyone signed in. You can delete it any time."}
               </p>
+              {submitError && (
+                <p
+                  role="alert"
+                  className="mt-3 flex items-start gap-[7px] rounded-[11px] bg-coral-soft px-[11px] py-[9px] text-[13px] font-semibold leading-[1.4] text-coral-text"
+                >
+                  <AlertCircle size={15} strokeWidth={2.4} aria-hidden className="mt-[1px] shrink-0" />
+                  {submitError}
+                </p>
+              )}
               <div className="mt-4 flex justify-end gap-2.5">
                 <button
                   type="button"
@@ -255,12 +314,14 @@ export function CreateEventModal({
                 </button>
                 <motion.button
                   type="submit"
-                  whileHover={{ y: -1 }}
-                  whileTap={{ scale: 0.98, y: 0 }}
+                  disabled={submitting}
+                  whileHover={submitting ? undefined : { y: -1 }}
+                  whileTap={submitting ? undefined : { scale: 0.98, y: 0 }}
                   transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="h-11 rounded-[12px] bg-brand px-6 text-[15px] font-bold text-white shadow-[0_4px_12px_rgb(23_102_232_/_0.26)] transition-colors hover:bg-brand-dark active:bg-brand-press"
+                  className="flex h-11 items-center gap-2 rounded-[12px] bg-brand px-6 text-[15px] font-bold text-white shadow-[0_4px_12px_rgb(23_102_232_/_0.26)] transition-colors hover:bg-brand-dark active:bg-brand-press disabled:cursor-wait disabled:opacity-80"
                 >
-                  Post Event
+                  {submitting && <Loader2 size={16} strokeWidth={2.6} aria-hidden className="animate-spin" />}
+                  {submitting ? "Posting…" : "Post Event"}
                 </motion.button>
               </div>
             </div>

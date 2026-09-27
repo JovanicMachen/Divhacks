@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { CATEGORY_STYLE } from "./constants";
-import { formatClock, timeStatusFor, todayLabel } from "./utils";
+import { mapToGeo, type MapPoint } from "./geo";
 import { useUserEvents } from "./user-events";
 import { FEATURED_EVENT_ID } from "@/data/mock-events";
 import type {
@@ -28,31 +27,56 @@ function matchesQuery(event: CampusEvent, query: string): boolean {
   );
 }
 
-/** Built-in events have a route; session-only events deliberately do not. */
-export function eventPath(event: CampusEvent): string | null {
-  return event.isTemporary ? null : `/events/${event.id}`;
+/** Every event has a route; student events resolve theirs on the client. */
+export function eventPath(event: CampusEvent): string {
+  return `/events/${event.id}`;
+}
+
+/** Where the event's pin sits, or null for events that aren't on the map. */
+export function eventPoint(event: CampusEvent): MapPoint | null {
+  return event.mapX === null || event.mapY === null ? null : { x: event.mapX, y: event.mapY };
+}
+
+/** Currently running: official listings say so in their status, student events by their times. */
+export function isHappeningNow(event: CampusEvent, now: Date = new Date()): boolean {
+  if (event.startsAt && event.endsAt) return new Date(event.startsAt) <= now && now < new Date(event.endsAt);
+  return event.timeStatus === "Happening now" || event.timeStatus.startsWith("Ends in");
 }
 
 const APP_TITLE = "Campus Connect — Columbia University";
+const MISSING_TOAST: Toast = { id: -1, message: "This event is no longer available." };
 
 /** Keeps the address bar and tab title in step with the open event. */
 function syncUrl(event: CampusEvent | null) {
-  const path = event ? eventPath(event) ?? "/" : "/";
+  const path = event ? eventPath(event) : "/";
   if (window.location.pathname !== path) window.history.replaceState(null, "", path);
   document.title = event ? `${event.title} at ${event.locationName} — Campus Connect` : APP_TITLE;
 }
 
-/**
- * All interactive state for the Phase 2 frontend. Everything lives in React
- * memory: going/saved/created events reset on refresh by design.
- */
+const toLocalIso = (time: string, now = new Date()) => {
+  const [h, m] = time.split(":").map(Number);
+  const at = new Date(now);
+  at.setHours(h, m, 0, 0);
+  return at.toISOString();
+};
+
+/** All interactive state for the map screen. */
 export function useCampusState(initialEventId?: string) {
-  const { events, addCreatedEvent, going, toggleGoing, saved, toggleSaved, focusId, setFocusId } =
-    useUserEvents();
-  const [selectedId, setSelectedId] = useState(() => {
-    const requested = initialEventId ?? focusId;
-    return requested && events.some((e) => e.id === requested) ? requested : FEATURED_EVENT_ID;
-  });
+  const {
+    events,
+    ready,
+    postEvent,
+    deleteEvent: removeEvent,
+    onRemoteDelete,
+    going,
+    toggleGoing,
+    saved,
+    toggleSaved,
+    focusId,
+    setFocusId,
+  } = useUserEvents();
+  const [requestedId] = useState(() => initialEventId ?? focusId);
+  const [selectedId, setSelectedId] = useState<string | null>(() => requestedId ?? FEATURED_EVENT_ID);
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [query, setQuery] = useState("");
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("all");
@@ -62,7 +86,9 @@ export function useCampusState(initialEventId?: string) {
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const selectedEvent = events.find((e) => e.id === selectedId) ?? events[0];
+  const selectedEvent = events.find((e) => e.id === selectedId) ?? null;
+  /** A deep link to an event that no longer exists (once student events have loaded). */
+  const missingRequested = ready && requestedId !== null && selectedId === requestedId && !selectedEvent;
 
   const visibleEvents = useMemo(
     () =>
@@ -79,6 +105,14 @@ export function useCampusState(initialEventId?: string) {
     [events, query, sidebarFilter, saved, mapPill, categoryFilter, dateFilter],
   );
 
+  const stats = useMemo(() => {
+    const now = new Date();
+    return {
+      happeningNow: events.filter((event) => isHappeningNow(event, now)).length,
+      freeFood: events.filter((event) => event.category === "Free Food").length,
+    };
+  }, [events]);
+
   const showToast = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ id: Date.now(), message });
@@ -92,6 +126,24 @@ export function useCampusState(initialEventId?: string) {
   useEffect(() => {
     if (focusId) setFocusId(null);
   }, [focusId, setFocusId]);
+
+  useEffect(() => {
+    if (missingRequested) syncUrl(null);
+  }, [missingRequested]);
+  const [missingDismissed, setMissingDismissed] = useState(false);
+  const shownToast = toast ?? (missingRequested && !missingDismissed ? MISSING_TOAST : null);
+
+  // Someone else deleted the event this screen has open.
+  useEffect(
+    () =>
+      onRemoteDelete((id) => {
+        if (id !== selectedId) return;
+        setSelectedId(null);
+        syncUrl(null);
+        showToast("This event was removed by its host.");
+      }),
+    [onRemoteDelete, selectedId, showToast],
+  );
 
   const selectEvent = useCallback(
     (id: string) => {
@@ -110,37 +162,45 @@ export function useCampusState(initialEventId?: string) {
   }, []);
 
   const createEvent = useCallback(
-    (draft: EventDraft): CampusEvent | null => {
-      if (!draft.point) return null;
-      const style = CATEGORY_STYLE[draft.category];
-      const event: CampusEvent = {
-        id: `temp-${Date.now()}`,
+    async (draft: EventDraft, hostName: string): Promise<{ event: CampusEvent } | { error: string }> => {
+      if (!draft.point) return { error: "Choose where it's happening on the map." };
+      const geo = mapToGeo(draft.point);
+      const result = await postEvent({
         title: draft.title.trim(),
         category: draft.category,
-        locationName: draft.locationName.trim() || "Pinned location",
-        address: draft.locationName.trim() || "Pinned on the campus map",
-        description: draft.description.trim() || "No description provided.",
-        mapX: draft.point.x,
-        mapY: draft.point.y,
-        distance: "On campus",
-        timeStatus: timeStatusFor(draft.startTime, draft.endTime),
-        startTime: formatClock(draft.startTime),
-        endTime: formatClock(draft.endTime),
-        dateLabel: todayLabel(),
-        goingCount: 0,
-        interestedCount: 0,
-        host: "You",
-        markerColor: style.markerColor,
-        iconType: style.iconType,
-        isTemporary: true,
-      };
-      addCreatedEvent(event);
-      setSelectedId(event.id);
-      setDrawerOpen(true);
-      syncUrl(event);
-      return event;
+        description: draft.description.trim(),
+        location_name: draft.locationName.trim() || "Pinned location",
+        location_id: draft.locationId,
+        map_x: draft.point.x,
+        map_y: draft.point.y,
+        lat: Number(geo.lat.toFixed(6)),
+        lng: Number(geo.lng.toFixed(6)),
+        host_name: hostName,
+        starts_at: toLocalIso(draft.startTime),
+        ends_at: toLocalIso(draft.endTime),
+      });
+      if ("event" in result) {
+        setSelectedId(result.event.id);
+        setDrawerOpen(true);
+        syncUrl(result.event);
+      }
+      return result;
     },
-    [addCreatedEvent],
+    [postEvent],
+  );
+
+  const deleteEvent = useCallback(
+    async (id: string): Promise<string | null> => {
+      const error = await removeEvent(id);
+      if (error) return error;
+      if (selectedId === id) {
+        setSelectedId(null);
+        setDrawerOpen(false);
+        syncUrl(null);
+      }
+      return null;
+    },
+    [removeEvent, selectedId],
   );
 
   const clearFilters = useCallback(() => {
@@ -153,10 +213,13 @@ export function useCampusState(initialEventId?: string) {
 
   return {
     events,
+    ready,
     clearFilters,
     visibleEvents,
+    stats,
     selectedEvent,
-    drawerOpen,
+    drawerOpen: drawerOpen && selectedEvent !== null,
+    requestedId,
     selectEvent,
     closeDrawer,
     going,
@@ -174,9 +237,13 @@ export function useCampusState(initialEventId?: string) {
     categoryFilter,
     setCategoryFilter,
     createEvent,
-    toast,
+    deleteEvent,
+    toast: shownToast,
     showToast,
-    dismissToast: () => setToast(null),
+    dismissToast: () => {
+      setToast(null);
+      setMissingDismissed(true);
+    },
   };
 }
 

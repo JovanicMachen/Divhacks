@@ -16,6 +16,12 @@ interface LocalState {
 }
 
 const KEY = "campus-connect.local-account";
+/**
+ * Each tab remembers which local account it is signed in as, so two accounts
+ * can be used side by side (e.g. to try deleting someone else's event). New
+ * tabs start as the most recently signed-in account, like a shared session.
+ */
+const TAB_KEY = "campus-connect.local-session";
 const EMPTY: LocalState = { current: null, accounts: {} };
 const listeners = new Set<() => void>();
 
@@ -35,8 +41,16 @@ function read(): LocalState {
   return cachedState;
 }
 
+function tabSession(state: LocalState): string | null {
+  const pinned = window.sessionStorage.getItem(TAB_KEY);
+  if (pinned !== null) return pinned && state.accounts[pinned] ? pinned : null;
+  if (state.current) window.sessionStorage.setItem(TAB_KEY, state.current);
+  return state.current;
+}
+
 function write(next: LocalState) {
   window.localStorage.setItem(KEY, JSON.stringify(next));
+  window.sessionStorage.setItem(TAB_KEY, next.current ?? "");
   listeners.forEach((listener) => listener());
 }
 
@@ -52,7 +66,8 @@ export const localAccountStore = {
   },
   getSnapshot(): LocalAccount | null {
     const state = read();
-    return state.current ? (state.accounts[state.current] ?? null) : null;
+    const current = tabSession(state);
+    return current ? (state.accounts[current] ?? null) : null;
   },
   /** Returns false when no local account exists for this email. */
   signIn(email: string): boolean {
@@ -88,8 +103,9 @@ export const localAccountStore = {
   },
   saveProfile(profile: Profile) {
     const state = read();
-    if (!state.current) throw new Error("Not signed in");
-    const account = state.accounts[state.current];
-    write({ ...state, accounts: { ...state.accounts, [state.current]: { ...account, profile } } });
+    const current = tabSession(state);
+    if (!current) throw new Error("Not signed in");
+    const account = state.accounts[current];
+    write({ ...state, current, accounts: { ...state.accounts, [current]: { ...account, profile } } });
   },
 };
