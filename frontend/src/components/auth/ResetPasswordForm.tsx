@@ -33,7 +33,6 @@ export function ResetPasswordForm() {
   const [confirm, setConfirm] = useState("");
   const [showErrors, setShowErrors] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
   const [phase, setPhase] = useState<"checking" | "ready" | "invalid">("checking");
   const [done, setDone] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -117,7 +116,6 @@ export function ResetPasswordForm() {
     e.preventDefault();
     if (!start()) return;
     setError(null);
-    setWait(null);
     try {
       if (errors.password || errors.confirm) {
         setShowErrors(true);
@@ -126,7 +124,6 @@ export function ResetPasswordForm() {
       const failure = await updatePassword(password);
       if (failure) {
         setError(failure.message);
-        setWait(failure.retryAfterSeconds ? { seconds: failure.retryAfterSeconds, issuedAt: Date.now() } : null);
         if (failure.message === EXPIRED) {
           clearPasswordRecoveryFlag();
           setPhase("invalid");
@@ -179,7 +176,7 @@ export function ResetPasswordForm() {
           />
           <FieldError id="reset-confirm-error" message={showErrors ? errors.confirm : null} />
         </div>
-        <FormError message={error} wait={wait} />
+        <FormError message={error} />
         <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
           {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
           {pending ? "Updating…" : "Update Password"}

@@ -1,10 +1,7 @@
 /**
- * Turns a Supabase Auth error into copy for the sign-in forms.
- * Rate limits stay on Supabase's side; this only names them and, when the
- * response includes a wait, how long that wait is.
+ * Turns a Supabase Auth error into copy for the sign-in and sign-up forms.
+ * A server rate limit is reported as a short retry message, with no countdown.
  */
-
-export const RATE_LIMIT_MESSAGE = "Too many attempts. Please wait a moment and try again.";
 
 const RATE_LIMIT_CODES = new Set([
   "over_request_rate_limit",
@@ -12,10 +9,9 @@ const RATE_LIMIT_CODES = new Set([
   "over_sms_send_rate_limit",
 ]);
 
-/** A failed auth call. `retryAfterSeconds` is set only for a rate-limit response that included a wait. */
+/** A failed auth call. */
 export type AuthFailure = {
   message: string;
-  retryAfterSeconds?: number;
 };
 
 type AuthErrorLike = {
@@ -40,35 +36,11 @@ export function isAuthRateLimit(error: AuthErrorLike): boolean {
   );
 }
 
-/** Seconds until another attempt is allowed, when the rate-limit response says so. */
-export function retryAfterSeconds(error: AuthErrorLike): number | undefined {
-  if (!isAuthRateLimit(error)) return undefined;
-  const message = error.message ?? "";
-  const match =
-    message.match(/after\s+(\d+)\s+seconds?/i) ??
-    message.match(/retry-after\D{0,16}(\d+)/i) ??
-    message.match(/\b(\d+)\s+seconds?\b/i);
-  if (!match) return undefined;
-  const seconds = Number(match[1]);
-  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 60 * 60) return undefined;
-  return seconds;
-}
-
-export function rateLimitCopy(seconds: number): string {
-  const unit = seconds === 1 ? "second" : "seconds";
-  return `Too many attempts. Please wait ${seconds} ${unit} and try again.`;
-}
-
 export function describeAuthError(error: AuthErrorLike): AuthFailure {
   const message = error.message ?? "";
   if (/failed to fetch|network|load failed/i.test(message)) return { message: NETWORK_ERROR };
 
-  if (isAuthRateLimit(error)) {
-    const retryAfterSecondsValue = retryAfterSeconds(error);
-    return retryAfterSecondsValue
-      ? { message: RATE_LIMIT_MESSAGE, retryAfterSeconds: retryAfterSecondsValue }
-      : { message: RATE_LIMIT_MESSAGE };
-  }
+  if (isAuthRateLimit(error)) return { message: "That didn't go through. Try again." };
 
   if (error.code === "invalid_credentials" || /invalid login credentials/i.test(message)) {
     return { message: BAD_CREDENTIALS };

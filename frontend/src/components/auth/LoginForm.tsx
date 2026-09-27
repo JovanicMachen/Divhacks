@@ -162,14 +162,12 @@ function ForgotCard({ email, onEmailChange, onBack }: EmailProps & { onBack: () 
   const { requestPasswordReset } = useAccount();
   const { pending, start, finish } = useSingleSubmit();
   const [error, setError] = useState<string | null>(null);
-  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
   const [sent, setSent] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!start()) return;
     setError(null);
-    setWait(null);
     try {
       if (!isValidEmail(email)) {
         setError("Please enter a valid email address.");
@@ -178,9 +176,6 @@ function ForgotCard({ email, onEmailChange, onBack }: EmailProps & { onBack: () 
       const failure = await requestPasswordReset(email.trim());
       if (failure) {
         setError(failure.message);
-        setWait(
-          failure.retryAfterSeconds ? { seconds: failure.retryAfterSeconds, issuedAt: Date.now() } : null,
-        );
         return;
       }
       setSent(true);
@@ -227,7 +222,7 @@ function ForgotCard({ email, onEmailChange, onBack }: EmailProps & { onBack: () 
             className={cn(INPUT, "h-12")}
           />
         </div>
-        <FormError message={error} wait={wait} />
+        <FormError message={error} />
         <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
           {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
           {pending ? "Sending…" : "Send reset link"}

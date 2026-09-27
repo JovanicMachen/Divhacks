@@ -58,7 +58,7 @@ interface AccountContextValue {
     email: string,
     password: string,
     displayName: string,
-  ) => Promise<{ error?: string; needsConfirmation?: boolean; retryAfterSeconds?: number }>;
+  ) => Promise<{ error?: string; needsConfirmation?: boolean }>;
   signOut: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<AuthFailure | null>;
   updatePassword: (password: string) => Promise<AuthFailure | null>;
@@ -210,10 +210,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
           emailRedirectTo: `${window.location.origin}/`,
         },
       });
-      if (error) {
-        const failure = describeAuthError(error);
-        return { error: failure.message, retryAfterSeconds: failure.retryAfterSeconds };
-      }
+      if (error) return { error: describeAuthError(error).message };
       // With confirmation on, an existing email returns a user with no identities.
       if (data.user && data.user.identities?.length === 0) return { error: ACCOUNT_EXISTS };
       if (!data.session) return { needsConfirmation: true };

@@ -26,7 +26,6 @@ export function SignupForm() {
   const { pending, start, finish } = useSingleSubmit();
   const [showErrors, setShowErrors] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
 
   const errors: Partial<Record<Field, string>> = {};
@@ -42,7 +41,6 @@ export function SignupForm() {
     e.preventDefault();
     if (!start()) return;
     setError(null);
-    setWait(null);
     try {
       if (Object.keys(errors).length > 0) {
         setShowErrors(true);
@@ -51,7 +49,6 @@ export function SignupForm() {
       const result = await signUp(email.trim(), password, name.trim());
       if (result.error) {
         setError(result.error);
-        setWait(result.retryAfterSeconds ? { seconds: result.retryAfterSeconds, issuedAt: Date.now() } : null);
         return;
       }
       if (result.needsConfirmation) {
@@ -167,7 +164,7 @@ export function SignupForm() {
           <FieldError id="signup-confirm-error" message={shown("confirm")} />
         </div>
 
-        <FormError message={error} wait={wait} />
+        <FormError message={error} />
 
         <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
           {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
