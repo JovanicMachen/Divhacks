@@ -13,8 +13,10 @@ Paste each file into the Supabase SQL editor and run it once. Every file only ad
 1. [`20260926120000_profile_account_fields.sql`](supabase/migrations/20260926120000_profile_account_fields.sql) — Profile columns, profile security rules, and the public `avatars` bucket.
 2. [`20260926220000_events_live_schema_compat.sql`](supabase/migrations/20260926220000_events_live_schema_compat.sql) — Adds the event columns the app needs to the existing tables, fills `source` for existing rows, and limits posting, editing and deleting to the owner of a student event. Going and Saved rows stay with the user who made them. It stops without changing anything if `events` already has a column that means the same thing as one it would add. The last result table lists what it changed and any **ACTION NEEDED** rows.
 
+3. [`20260926230000_notifications.sql`](supabase/migrations/20260926230000_notifications.sql) — Creates `notifications`, one row per user per notification. Each user can only read, mark read, and remove their own. A per-user `dedupe_key` stops the same notification being created twice, and the table is added to realtime so it syncs across that user's devices.
+
 Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
 
-**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `220000`.
+**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `220000`, then `230000`.
 
 Official campus listings are not stored here. They ship with the frontend and cannot be deleted by a student account.
