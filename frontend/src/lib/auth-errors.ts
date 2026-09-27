@@ -92,3 +92,29 @@ export function describeAuthError(error: AuthErrorLike): AuthFailure {
   if (/invalid.*email|email.*invalid/i.test(message)) return { message: "Please enter a valid email address." };
   return { message: message || "Something went wrong. Please try again." };
 }
+
+/** Reset emails use the same success screen whether or not the address is registered. */
+export function describeResetRequestError(error: AuthErrorLike): AuthFailure | null {
+  if (isAuthRateLimit(error)) return describeAuthError(error);
+  const message = error.message ?? "";
+  if (/failed to fetch|network|load failed/i.test(message)) return describeAuthError(error);
+  if (error.code === "user_not_found" || /user not found|email not found/i.test(message)) return null;
+  return { message: "Couldn't send a reset link. Please try again." };
+}
+
+export function describePasswordUpdateError(error: AuthErrorLike): AuthFailure {
+  if (isAuthRateLimit(error)) return describeAuthError(error);
+  const message = error.message ?? "";
+  if (/failed to fetch|network|load failed/i.test(message)) return { message: NETWORK_ERROR };
+  if (
+    error.status === 401 ||
+    error.code === "session_not_found" ||
+    error.code === "otp_expired" ||
+    /expired|invalid.*(token|link|session)|session.*(missing|expired)/i.test(message)
+  ) {
+    return { message: "This password reset link is invalid or has expired." };
+  }
+  if (/password/i.test(message) && /(least|short|weak|characters)/i.test(message)) return describeAuthError(error);
+  if (error.code === "same_password") return { message: "Choose a password you haven't used before." };
+  return { message: "Couldn't update your password. Please try again." };
+}

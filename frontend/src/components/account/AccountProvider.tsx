@@ -20,7 +20,16 @@ import {
   normalizeWebsite,
   resizeAvatar,
 } from "@/lib/account";
-import { ACCOUNT_EXISTS, BAD_CREDENTIALS, describeAuthError, type AuthFailure } from "@/lib/auth-errors";
+import { clearPasswordRecoveryFlag, markPasswordRecovery } from "@/lib/auth-callback";
+import {
+  ACCOUNT_EXISTS,
+  BAD_CREDENTIALS,
+  describeAuthError,
+  describePasswordUpdateError,
+  describeResetRequestError,
+  type AuthFailure,
+} from "@/lib/auth-errors";
+import { passwordResetRedirectUrl } from "@/lib/password-reset";
 import { localAccountStore } from "@/lib/local-account";
 import { AVATAR_BUCKET, getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { AccountUser, Profile, ProfileInput } from "@/types/profile";
@@ -53,6 +62,8 @@ interface AccountContextValue {
   requestPasswordReset: (email: string) => Promise<AuthFailure | null>;
   updatePassword: (password: string) => Promise<AuthFailure | null>;
   saveProfile: (input: ProfileInput, avatar: AvatarChange) => Promise<string | null>;
+  /** True after this tab follows a valid Supabase recovery link. */
+  passwordRecovery: boolean;
   /** One-off confirmation shown on the next screen, e.g. after saving. */
   flash: string | null;
   setFlash: (message: string | null) => void;
@@ -112,6 +123,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   const [remoteUser, setRemoteUser] = useState<AccountUser | null | undefined>(undefined);
   const [remoteProfile, setRemoteProfile] = useState<Profile | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,8 +132,16 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       if (active) setRemoteUser(data.session ? toAccountUser(data.session.user) : null);
     });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
       setRemoteUser(session ? toAccountUser(session.user) : null);
+      if (event === "PASSWORD_RECOVERY") {
+        markPasswordRecovery();
+        setPasswordRecovery(true);
+      }
+      if (event === "SIGNED_OUT") {
+        clearPasswordRecoveryFlag();
+        setPasswordRecovery(false);
+      }
     });
     return () => {
       active = false;
@@ -156,9 +176,16 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
-      if (!supabase) return localAccountStore.signIn(email) ? null : { message: BAD_CREDENTIALS };
+      if (!supabase) {
+        if (!localAccountStore.signIn(email)) return { message: BAD_CREDENTIALS };
+        clearPasswordRecoveryFlag();
+        setPasswordRecovery(false);
+        return null;
+      }
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return describeAuthError(error);
+      clearPasswordRecoveryFlag();
+      setPasswordRecovery(false);
       setRemoteUser(toAccountUser(data.user));
       return null;
     },
@@ -193,9 +220,13 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) {
+      clearPasswordRecoveryFlag();
+      setPasswordRecovery(false);
       localAccountStore.signOut();
       return;
     }
+    clearPasswordRecoveryFlag();
+    setPasswordRecovery(false);
     await supabase.auth.signOut();
     setRemoteUser(null);
     setRemoteProfile(null);
@@ -205,9 +236,9 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     async (email: string) => {
       if (!supabase) return { message: "Password reset needs Supabase to be configured." };
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: passwordResetRedirectUrl(),
       });
-      return error ? describeAuthError(error) : null;
+      return error ? describeResetRequestError(error) : null;
     },
     [supabase],
   );
@@ -216,7 +247,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     async (password: string) => {
       if (!supabase) return { message: "Password reset needs Supabase to be configured." };
       const { error } = await supabase.auth.updateUser({ password });
-      return error ? describeAuthError(error) : null;
+      return error ? describePasswordUpdateError(error) : null;
     },
     [supabase],
   );
@@ -303,10 +334,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       requestPasswordReset,
       updatePassword,
       saveProfile,
+      passwordRecovery,
       flash,
       setFlash,
     };
-  }, [status, mode, user, profile, signIn, signUp, signOut, requestPasswordReset, updatePassword, saveProfile, flash]);
+  }, [status, mode, user, profile, signIn, signUp, signOut, requestPasswordReset, updatePassword, saveProfile, passwordRecovery, flash]);
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }

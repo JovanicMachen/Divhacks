@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, MailCheck } from "lucide-react";
@@ -11,14 +11,28 @@ import { PasswordField } from "./PasswordField";
 import { useSingleSubmit } from "./useSingleSubmit";
 import { useAccount } from "@/components/account/AccountProvider";
 import { isValidEmail } from "@/lib/auth-validation";
+import { PASSWORD_UPDATED } from "@/lib/password-reset";
 import { INPUT, LABEL, PRIMARY_BUTTON } from "@/lib/form-styles";
 import { cn } from "@/lib/utils";
 
 export function LoginForm() {
   const [view, setView] = useState<"signIn" | "forgot">("signIn");
   const [email, setEmail] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("forgot") === "1") setView("forgot");
+    if (params.get("updated") === "1") {
+      setNotice(PASSWORD_UPDATED);
+      params.delete("updated");
+      const next = params.toString();
+      window.history.replaceState(null, "", next ? `/login?${next}` : "/login");
+    }
+  }, []);
+
   return view === "signIn" ? (
-    <SignInCard email={email} onEmailChange={setEmail} onForgot={() => setView("forgot")} />
+    <SignInCard email={email} onEmailChange={setEmail} notice={notice} onForgot={() => setView("forgot")} />
   ) : (
     <ForgotCard email={email} onEmailChange={setEmail} onBack={() => setView("signIn")} />
   );
@@ -29,7 +43,12 @@ interface EmailProps {
   onEmailChange: (email: string) => void;
 }
 
-function SignInCard({ email, onEmailChange, onForgot }: EmailProps & { onForgot: () => void }) {
+function SignInCard({
+  email,
+  onEmailChange,
+  notice,
+  onForgot,
+}: EmailProps & { notice: string | null; onForgot: () => void }) {
   const { signIn } = useAccount();
   const router = useRouter();
   const { pending, start, finish } = useSingleSubmit();
@@ -81,6 +100,11 @@ function SignInCard({ email, onEmailChange, onForgot }: EmailProps & { onForgot:
       }
     >
       <form onSubmit={submit} noValidate className="space-y-[18px]">
+        {notice && (
+          <div className="rounded-[14px] bg-brand-tint px-4 py-3.5 text-[14px] font-medium leading-[1.45] text-ink-soft">
+            {notice}
+          </div>
+        )}
         <div>
           <label htmlFor="login-email" className={LABEL}>
             Email
@@ -182,10 +206,7 @@ function ForgotCard({ email, onEmailChange, onBack }: EmailProps & { onBack: () 
       <AuthShell title="Check your email" footer={back}>
         <div className="flex items-start gap-3 rounded-[14px] bg-brand-tint px-4 py-3.5">
           <MailCheck size={20} strokeWidth={2.2} aria-hidden className="mt-[1px] shrink-0 text-brand" />
-          <p className="text-[14px] font-medium leading-[1.45] text-ink-soft">
-            If an account exists for <strong className="font-bold text-ink">{email.trim()}</strong>, we&apos;ve
-            sent a link to reset your password.
-          </p>
+          <p className="text-[14px] font-medium leading-[1.45] text-ink-soft">We sent you a password reset link.</p>
         </div>
       </AuthShell>
     );
@@ -214,7 +235,7 @@ function ForgotCard({ email, onEmailChange, onBack }: EmailProps & { onBack: () 
         <FormError message={error} wait={wait} />
         <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
           {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
-          Send reset link
+          {pending ? "Sending…" : "Send reset link"}
         </button>
       </form>
     </AuthShell>

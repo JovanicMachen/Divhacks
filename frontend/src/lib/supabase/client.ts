@@ -1,5 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { captureAuthCallback } from "@/lib/auth-callback";
+
+// Read the recovery redirect before the auth client strips tokens from the URL.
+captureAuthCallback();
+
 // Referenced literally so Next.js can inline them into the browser bundle.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY =

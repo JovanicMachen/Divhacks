@@ -35,11 +35,16 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const access = routeAccess(pathname);
+  // Expired reset links send people to /login?forgot=1, including if a session is still around.
+  const forgotRequest =
+    pathname === "/login" &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("forgot") === "1";
 
   const redirect =
     access === "protected" && status === "signedOut"
       ? "login"
-      : access === "auth" && status === "signedIn"
+      : access === "auth" && status === "signedIn" && !forgotRequest
         ? "app"
         : null;
 
@@ -48,6 +53,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       const here = window.location.pathname + window.location.search;
       router.replace(here === "/" ? "/login" : `/login?next=${encodeURIComponent(here)}`);
     } else if (redirect === "app") {
+      if (window.location.pathname === "/login" && new URLSearchParams(window.location.search).get("forgot") === "1") return;
       router.replace(safeNextPath(new URLSearchParams(window.location.search).get("next")));
     }
   }, [redirect, router]);

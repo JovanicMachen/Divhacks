@@ -48,6 +48,11 @@ you signed in. Sign-up passes `display_name` in user metadata for the
 `auth.users` → `profiles` trigger; if email confirmation is on, the page asks
 the user to check their email instead of signing them in.
 
+Forgot password stays on `/login` and asks Supabase to email a recovery link.
+The link returns to `/reset-password` on the current site (the deployed site
+in production). After the new password is saved, the session is cleared and
+the person signs in again at `/login`.
+
 ## Routes
 
 | Route | What it is |
