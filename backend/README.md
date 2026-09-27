@@ -19,8 +19,16 @@ Paste each file into the Supabase SQL editor and run it once. Every file only ad
 
 5. [`20260927001000_campus_feedback.sql`](supabase/migrations/20260927001000_campus_feedback.sql) — Creates `campus_feedback` so a student can share an Ask Gemini answer with everyone else who is signed in. Each person can only add or remove their own note. The table is added to realtime.
 
+6. [`20260927010000_event_status_and_chat.sql`](supabase/migrations/20260927010000_event_status_and_chat.sql) — Lets an organizer cancel their event without deleting it, and gives every event a live chat room.
+   - `events` gains `status` (`active`, `abandoned` or `ended`; every existing row starts `active`), `abandoned_at` (set by the database clock), and `pinned_message_id` (one organizer message pinned in the chat).
+   - Only the owner of a student event can cancel it, a cancelled event can't be restored, and official listings can't be cancelled.
+   - Creates `event_messages`. Signed-in users can read any event's chat and post as themselves while the event is active and before `end_time`. Authors can soft-delete their own messages, and nobody can edit or hard-delete them.
+   - Deleted text moves to `event_message_deletions`, which no client can read.
+   - `event_messages` is added to realtime.
+   - It stops without changing anything if `events` already has a status-like or pinned-message-like column it didn't create.
+
 Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
 
-**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
+**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `221000`, then `230000`, then `240000`, then `27001000`, then `27010000`. The `event-images` bucket and its folder policies are set up in the Supabase dashboard, not by these files.
 
 Official campus listings are not stored here. They ship with the frontend and cannot be deleted by a student account.
