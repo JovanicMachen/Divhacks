@@ -27,6 +27,7 @@ import {
   describeAuthError,
   describePasswordUpdateError,
   describeResetRequestError,
+  isAuthRateLimit,
   type AuthFailure,
 } from "@/lib/auth-errors";
 import { passwordResetRedirectUrl } from "@/lib/password-reset";
@@ -183,7 +184,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return describeAuthError(error);
+      if (error) {
+        if (isAuthRateLimit(error)) return { message: "Sign-in didn't go through. Try again." };
+        const failure = describeAuthError(error);
+        return { message: failure.message };
+      }
       clearPasswordRecoveryFlag();
       setPasswordRecovery(false);
       setRemoteUser(toAccountUser(data.user));

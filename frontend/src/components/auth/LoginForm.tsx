@@ -55,7 +55,6 @@ function SignInCard({
   const [password, setPassword] = useState("");
   const [showErrors, setShowErrors] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [wait, setWait] = useState<{ seconds: number; issuedAt: number } | null>(null);
 
   const errors = {
     email: !email.trim() ? "Enter your email address." : !isValidEmail(email) ? "Please enter a valid email address." : null,
@@ -66,7 +65,6 @@ function SignInCard({
     e.preventDefault();
     if (!start()) return;
     setError(null);
-    setWait(null);
     try {
       if (errors.email || errors.password) {
         setShowErrors(true);
@@ -75,9 +73,6 @@ function SignInCard({
       const failure = await signIn(email.trim(), password);
       if (failure) {
         setError(failure.message);
-        setWait(
-          failure.retryAfterSeconds ? { seconds: failure.retryAfterSeconds, issuedAt: Date.now() } : null,
-        );
         return;
       }
       router.push(safeNextPath(new URLSearchParams(window.location.search).get("next")));
@@ -152,7 +147,7 @@ function SignInCard({
           <FieldError id="login-password-error" message={showErrors ? errors.password : null} />
         </div>
 
-        <FormError message={error} wait={wait} />
+        <FormError message={error} />
 
         <button type="submit" disabled={pending} aria-busy={pending} className={cn(PRIMARY_BUTTON, "w-full")}>
           {pending && <Loader2 size={17} strokeWidth={2.6} className="animate-spin" aria-hidden />}
