@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bookmark, CalendarCheck, CalendarDays, CheckCircle2, Clock, GraduationCap, Link2, MapPin, PenLine } from "lucide-react";
+import { Bookmark, CalendarCheck, CalendarDays, CheckCircle2, Clock, GraduationCap, Link2, MapPin, PenLine, Plus } from "lucide-react";
 
 import { useAccount } from "./AccountProvider";
 import { Avatar } from "./Avatar";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import type { CampusEvent } from "@/types/event";
 
 const TABS = [
-  { id: "posted", label: "Posted", icon: CalendarDays, empty: "No events posted yet." },
+  { id: "posted", label: "Posted", icon: CalendarDays, empty: "You haven't posted any events yet." },
   { id: "attending", label: "Attending", icon: CalendarCheck, empty: "No upcoming events." },
   { id: "saved", label: "Saved", icon: Bookmark, empty: "No saved events yet." },
 ] as const;
@@ -32,8 +32,8 @@ const EMPTY_HINT: Record<TabId, string> = {
 
 export function ProfileView() {
   const account = useAccount();
-  const { status, displayName, handle, avatarUrl, university, profile, flash, setFlash } = account;
-  const { events, createdEvents, going, saved } = useUserEvents();
+  const { status, mode, displayName, handle, avatarUrl, university, profile, flash, setFlash } = account;
+  const { events, myEvents, going, saved, setComposeRequested } = useUserEvents();
   const router = useRouter();
   const params = useSearchParams();
   const tabParam = params.get("tab");
@@ -48,12 +48,12 @@ export function ProfileView() {
   if (status !== "signedIn") return <ProfileSkeleton />;
 
   const lists: Record<TabId, CampusEvent[]> = {
-    posted: createdEvents,
+    posted: myEvents,
     attending: events.filter((e) => going.has(e.id)),
     saved: events.filter((e) => saved.has(e.id)),
   };
   const stats = [
-    { label: "Events Posted", value: createdEvents.length },
+    { label: "Events Posted", value: myEvents.length },
     { label: "Attended", value: going.size },
     { label: "Saved", value: saved.size },
   ];
@@ -185,12 +185,26 @@ export function ProfileView() {
             </span>
             <p className="mt-3 text-[16px] font-bold text-ink">{activeTab.empty}</p>
             <p className="mt-1 max-w-[320px] text-[14px] font-medium text-muted">{EMPTY_HINT[tab]}</p>
-            <Link
-              href="/"
-              className="mt-4 flex h-10 items-center rounded-[12px] bg-brand px-4 text-[14px] font-bold text-white transition-colors hover:bg-brand-dark"
-            >
-              Explore the map
-            </Link>
+            {tab === "posted" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setComposeRequested(true);
+                  router.push("/");
+                }}
+                className="mt-4 flex h-10 items-center gap-1.5 rounded-[12px] bg-brand px-4 text-[14px] font-bold text-white transition-colors hover:bg-brand-dark"
+              >
+                <Plus size={17} strokeWidth={2.6} aria-hidden />
+                Post an Event
+              </button>
+            ) : (
+              <Link
+                href="/"
+                className="mt-4 flex h-10 items-center rounded-[12px] bg-brand px-4 text-[14px] font-bold text-white transition-colors hover:bg-brand-dark"
+              >
+                Explore the map
+              </Link>
+            )}
           </div>
         ) : (
           <ul className="grid gap-3 tablet:grid-cols-2">
@@ -202,7 +216,9 @@ export function ProfileView() {
           </ul>
         )}
         <p className="mt-4 text-center text-[12.5px] font-medium text-faint">
-          Event activity is kept for your current browser session.
+          {mode === "local"
+            ? "Local preview: your events, Going and Saved lists are kept in this browser."
+            : "Going and Saved are kept in this browser for your account."}
         </p>
       </div>
     </div>
@@ -214,7 +230,7 @@ function ProfileEventCard({ event }: { event: CampusEvent }) {
   const palette = MARKER_PALETTE[event.markerColor];
   return (
     <Link
-      href={eventPath(event) ?? "/"}
+      href={eventPath(event)}
       onClick={() => setFocusId(event.id)}
       className="group flex items-center gap-3.5 rounded-[16px] border border-line bg-panel p-3 transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-pill-hover"
     >
@@ -227,9 +243,9 @@ function ProfileEventCard({ event }: { event: CampusEvent }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-[15px] font-bold text-ink group-hover:text-brand">{event.title}</span>
-          {event.isTemporary && (
-            <span className="shrink-0 rounded-full bg-field px-2 py-[1px] text-[11px] font-bold text-muted">
-              This session
+          {event.source === "official" && (
+            <span className="shrink-0 rounded-full bg-brand-tint px-2 py-[1px] text-[11px] font-bold text-brand">
+              Official
             </span>
           )}
         </span>

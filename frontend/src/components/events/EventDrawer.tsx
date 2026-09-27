@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bookmark,
@@ -7,12 +8,13 @@ import {
   Check,
   ChevronRight,
   Clock,
-  Info,
+  Ellipsis,
   MapPin,
   Navigation,
   PersonStanding,
   Share2,
   Star,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -36,6 +38,8 @@ interface EventDrawerProps {
   isSaved: boolean;
   onToggleSaved: () => void;
   onShare: () => void;
+  /** Only passed for the signed-in user's own student events. */
+  onDelete?: () => void;
 }
 
 /**
@@ -113,6 +117,7 @@ function DrawerCard({
   isSaved,
   onToggleSaved,
   onShare,
+  onDelete,
 }: EventDrawerProps) {
   const palette = MARKER_PALETTE[event.markerColor];
   const goingCount = event.goingCount + (isGoing ? 1 : 0);
@@ -130,7 +135,7 @@ function DrawerCard({
               transition={{ duration: 0.2 }}
               className="absolute inset-0"
             >
-              {event.iconType === "pizza" && !event.isTemporary ? (
+              {event.iconType === "pizza" && event.source === "official" ? (
                 <EventHeroArt />
               ) : (
                 <CategoryHeroArt event={event} />
@@ -154,6 +159,7 @@ function DrawerCard({
             <button type="button" onClick={onShare} aria-label="Share event" className={HERO_BUTTON}>
               <Share2 size={15} strokeWidth={2.4} />
             </button>
+            {onDelete && <ManageMenu key={event.id} onDelete={onDelete} />}
             <button
               type="button"
               onClick={onClose}
@@ -182,6 +188,11 @@ function DrawerCard({
           <CategoryGlyph category={event.category} size={15} />
           {event.category}
         </span>
+        {onDelete && (
+          <span className="ml-2 inline-flex h-[26px] items-center rounded-full bg-field px-[10px] text-[12.5px] font-semibold text-muted">
+            Posted by you
+          </span>
+        )}
 
         <h1 className="mt-[9px] text-[32px] font-extrabold leading-[1.08] tracking-[-0.025em] text-ink">
           {event.title}
@@ -212,13 +223,6 @@ function DrawerCard({
           </span>
         </div>
 
-        {event.isTemporary && (
-          <p className="mt-[14px] flex items-start gap-[7px] rounded-[11px] bg-[#F3F6FB] px-[11px] py-[8px] text-[12.5px] font-medium leading-[1.35] text-muted">
-            <Info size={14} strokeWidth={2.3} aria-hidden className="mt-[1px] shrink-0 text-faint" />
-            Temporary event — only visible in this browser session. It disappears when you
-            refresh.
-          </p>
-        )}
 
         <p className="mt-[18px] text-[15px] leading-[21px] text-ink-soft">
           <Emphasized text={event.description} emphasis={event.emphasis} />
@@ -319,6 +323,79 @@ function DrawerCard({
           <ChevronRight size={17} strokeWidth={2.2} aria-hidden className="shrink-0 text-faint" />
         </button>
       </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** Owner-only "•••" menu. Only actions that actually work are listed. */
+function ManageMenu({ onDelete }: { onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    menuRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus({ preventScroll: true });
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Manage event"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        className={HERO_BUTTON}
+      >
+        <Ellipsis size={17} strokeWidth={2.6} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            ref={menuRef}
+            id={menuId}
+            role="menu"
+            aria-label="Manage event"
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            className="absolute right-0 top-[calc(100%+8px)] z-10 w-[190px] origin-top-right rounded-[14px] border border-line bg-panel p-1.5 shadow-float"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onDelete();
+              }}
+              className="flex h-10 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[14px] font-semibold text-coral-text outline-none transition-colors hover:bg-coral-soft focus-visible:bg-coral-soft"
+            >
+              <Trash2 size={17} strokeWidth={2.2} aria-hidden />
+              Delete Event
+            </button>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
