@@ -18,9 +18,9 @@ export const LAYER_SIZE = { width: WORLD.width * PX_PER_UNIT, height: WORLD.heig
 
 const MAX_SCALE = 4.4;
 /** The opening view spans about this many world units across its longer side. */
-const HOME_SPAN = 400;
-/** Just south of Low Library, so the view runs from Pupin to Butler. */
-const HOME_CENTER = worldToMap({ x: 328, y: 364 });
+const HOME_SPAN = 420;
+/** On Low Steps, so the view runs from Dodge gym to Butler between the filter pills and the stats bar. */
+const HOME_CENTER = worldToMap({ x: 328, y: 350 });
 /** How far past the drawn edge the map may be dragged, in screen px. */
 const PAN_SLACK = 60;
 const TAP_TOLERANCE = 5;
