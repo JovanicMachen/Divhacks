@@ -144,8 +144,5 @@ const RAW_OFFICIAL_EVENTS: RawOfficialEvent[] = [
 
 export const OFFICIAL_EVENTS = RAW_OFFICIAL_EVENTS.map(normalizeOfficialEvent);
 
-/** The event selected when the app first opens. */
-export const FEATURED_EVENT_ID = "free-pizza";
-
 /** People currently active on campus (no live source yet, so a fixed demo figure). */
 export const ACTIVE_ON_CAMPUS = 143;

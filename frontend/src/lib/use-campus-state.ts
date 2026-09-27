@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { eventWindow, isCancelled, isOffLiveMap, phaseAt, useLifecycleNow } from "./event-clock";
 import { mapToGeo, type MapPoint } from "./geo";
 import { useUserEvents } from "./user-events";
-import { FEATURED_EVENT_ID } from "@/data/mock-events";
 import type {
   CampusEvent,
   DateFilter,
@@ -80,9 +79,10 @@ export function useCampusState(initialEventId?: string) {
     focusId,
     setFocusId,
   } = useUserEvents();
-  const [requestedId] = useState(() => initialEventId ?? focusId);
-  const [selectedId, setSelectedId] = useState<string | null>(() => requestedId ?? FEATURED_EVENT_ID);
-  const [drawerOpen, setDrawerOpen] = useState(true);
+  // Only a real /events/[id] visit selects something. The homepage starts closed.
+  const [requestedId] = useState<string | null>(() => initialEventId ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(requestedId);
+  const [drawerOpen, setDrawerOpen] = useState(requestedId !== null);
   const [query, setQuery] = useState("");
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("all");
   const [mapPill, setMapPill] = useState<MapPill>("trending");
@@ -90,6 +90,8 @@ export function useCampusState(initialEventId?: string) {
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | "all">("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [toast, setToast] = useState<Toast | null>(null);
+  const [linkMissing, setLinkMissing] = useState(false);
+  const [missingDismissed, setMissingDismissed] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedEvent = events.find((e) => e.id === selectedId) ?? null;
@@ -140,11 +142,17 @@ export function useCampusState(initialEventId?: string) {
     if (focusId) setFocusId(null);
   }, [focusId, setFocusId]);
 
+  // A deep link that doesn't match any event is dropped so a later realtime insert can't open it.
+  if (missingRequested && !linkMissing) {
+    setLinkMissing(true);
+    setSelectedId(null);
+    setDrawerOpen(false);
+  }
+  const shownToast = toast ?? (linkMissing && !missingDismissed ? MISSING_TOAST : null);
+
   useEffect(() => {
-    if (missingRequested) syncUrl(null);
-  }, [missingRequested]);
-  const [missingDismissed, setMissingDismissed] = useState(false);
-  const shownToast = toast ?? (missingRequested && !missingDismissed ? MISSING_TOAST : null);
+    if (linkMissing) syncUrl(null);
+  }, [linkMissing]);
 
   // Someone else deleted the event this screen has open.
   useEffect(
@@ -171,6 +179,7 @@ export function useCampusState(initialEventId?: string) {
 
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false);
+    setSelectedId(null);
     syncUrl(null);
   }, []);
 
