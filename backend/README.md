@@ -4,12 +4,17 @@ This folder is the database. It is SQL you run in your Supabase project. Nothing
 
 The web app talks to Supabase directly from the browser, using the public key in `frontend/.env.local`. See [`frontend/README.md`](../frontend/README.md).
 
-## Run these two files, in this order
+## Which files to run
 
-In the Supabase SQL editor, paste and run each file once. Both are safe to run again: they only add tables, columns, and policies, and they never drop or rename anything.
+Paste each file into the Supabase SQL editor and run it once. Every file only adds things; none drops or renames a table or column.
 
-1. [`supabase/migrations/20260926120000_profile_account_fields.sql`](supabase/migrations/20260926120000_profile_account_fields.sql) — Adds the profile columns the account pages read and write (`display_name`, `username`, `bio`, `website`, `university`, `avatar_url`), keeps each user limited to their own row, and creates the public `avatars` storage bucket.
+**The live Campus Connect database** (it already has an `events` table):
 
-2. [`supabase/migrations/20260926200000_events_ownership.sql`](supabase/migrations/20260926200000_events_ownership.sql) — Creates `events`, `event_attendees`, and `saved_events`, so signed-in users can read events but can only create or delete their own student events, and Going and Saved rows belong to the user who made them.
+1. [`20260926120000_profile_account_fields.sql`](supabase/migrations/20260926120000_profile_account_fields.sql) — Profile columns, profile security rules, and the public `avatars` bucket.
+2. [`20260926220000_events_live_schema_compat.sql`](supabase/migrations/20260926220000_events_live_schema_compat.sql) — Adds the event columns the app needs to the existing tables, fills `source` for existing rows, and limits posting, editing and deleting to the owner of a student event. Going and Saved rows stay with the user who made them. It stops without changing anything if `events` already has a column that means the same thing as one it would add. The last result table lists what it changed and any **ACTION NEEDED** rows.
+
+Do not run `20260926200000_events_ownership.sql` on the live database. It is for a brand-new database with no `events` table.
+
+**A brand-new database** (no `events` table yet): run `120000`, then `200000`, then `220000`.
 
 Official campus listings are not stored here. They ship with the frontend and cannot be deleted by a student account.

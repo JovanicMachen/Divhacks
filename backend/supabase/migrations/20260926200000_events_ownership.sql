@@ -1,4 +1,6 @@
 -- Campus Connect: student-posted events with ownership, plus Going / Saved.
+-- Only for a database with no events table. If events already exists, run
+-- 20260926220000_events_live_schema_compat.sql instead.
 -- Additive and re-runnable: nothing is dropped or renamed.
 --
 -- Rules enforced by Row Level Security:
